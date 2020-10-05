@@ -22,6 +22,7 @@ import org.gradle.api.internal.artifacts.transform.ArtifactTransformActionScheme
 import org.gradle.api.internal.artifacts.transform.ArtifactTransformListener
 import org.gradle.api.internal.artifacts.transform.ArtifactTransformParameterScheme
 import org.gradle.api.internal.artifacts.transform.TransformationNodeRegistry
+import org.gradle.api.internal.artifacts.transform.TransformedVariantFactory
 import org.gradle.api.internal.attributes.ImmutableAttributesFactory
 import org.gradle.api.internal.file.FileCollectionFactory
 import org.gradle.api.internal.file.FileFactory
@@ -100,6 +101,7 @@ class Codecs(
     transformListener: ArtifactTransformListener,
     transformationNodeRegistry: TransformationNodeRegistry,
     valueSourceProviderFactory: ValueSourceProviderFactory,
+    transformedVariantFactory: TransformedVariantFactory,
     patternSetFactory: Factory<PatternSet>,
     fileOperations: FileOperations,
     fileFactory: FileFactory,
@@ -140,6 +142,7 @@ class Codecs(
         bind(TransformDependenciesCodec)
         bind(PublishArtifactLocalArtifactMetadataCodec)
         bind(TransformedExternalArtifactSetCodec(transformationNodeRegistry))
+        bind(LocalFileDependencyBackedArtifactSetCodec(instantiator, attributesFactory, fileCollectionFactory, transformedVariantFactory))
 
         bind(DefaultCopySpecCodec(patternSetFactory, fileCollectionFactory, instantiator))
         bind(DestinationRootCopySpecCodec(fileResolver))
