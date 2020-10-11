@@ -37,7 +37,7 @@ import org.gradle.plugin.use.resolve.internal.PluginResolver;
 import java.io.File;
 import java.util.Collection;
 
-public class DefaultInjectedClasspathPluginResolver implements InjectedClasspathPluginResolver, PluginResolver {
+public class DefaultInjectedClasspathPluginResolver implements ClientInjectedClasspathPluginResolver, PluginResolver {
 
     private final ClassPath injectedClasspath;
     private final PluginRegistry pluginRegistry;

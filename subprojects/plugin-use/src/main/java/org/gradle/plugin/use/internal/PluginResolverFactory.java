@@ -28,7 +28,7 @@ import org.gradle.plugin.use.resolve.internal.NoopPluginResolver;
 import org.gradle.plugin.use.resolve.internal.PluginResolver;
 import org.gradle.plugin.use.resolve.internal.PluginResolverContributor;
 import org.gradle.plugin.use.resolve.service.internal.DefaultInjectedClasspathPluginResolver;
-import org.gradle.plugin.use.resolve.service.internal.InjectedClasspathPluginResolver;
+import org.gradle.plugin.use.resolve.service.internal.ClientInjectedClasspathPluginResolver;
 
 import java.util.LinkedList;
 import java.util.List;
@@ -37,7 +37,7 @@ public class PluginResolverFactory implements Factory<PluginResolver> {
 
     private final PluginRegistry pluginRegistry;
     private final DocumentationRegistry documentationRegistry;
-    private final InjectedClasspathPluginResolver injectedClasspathPluginResolver;
+    private final ClientInjectedClasspathPluginResolver injectedClasspathPluginResolver;
     private final DependencyResolutionServices dependencyResolutionServices;
     private final List<PluginResolverContributor> pluginResolverContributors;
     private final VersionSelectorScheme versionSelectorScheme;
@@ -45,7 +45,7 @@ public class PluginResolverFactory implements Factory<PluginResolver> {
     public PluginResolverFactory(
         PluginRegistry pluginRegistry,
         DocumentationRegistry documentationRegistry,
-        InjectedClasspathPluginResolver injectedClasspathPluginResolver,
+        ClientInjectedClasspathPluginResolver injectedClasspathPluginResolver,
         DependencyResolutionServices dependencyResolutionServices,
         List<PluginResolverContributor> pluginResolverContributors,
         VersionSelectorScheme versionSelectorScheme) {

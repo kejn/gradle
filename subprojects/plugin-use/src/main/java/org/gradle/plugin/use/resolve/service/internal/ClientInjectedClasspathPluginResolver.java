@@ -20,8 +20,8 @@ import org.gradle.plugin.use.resolve.internal.PluginResolver;
 
 import java.util.Collection;
 
-public interface InjectedClasspathPluginResolver {
-    InjectedClasspathPluginResolver EMPTY = dest -> { };
+public interface ClientInjectedClasspathPluginResolver {
+    ClientInjectedClasspathPluginResolver EMPTY = dest -> { };
 
     void collectResolversInto(Collection<? super PluginResolver> dest);
 }
