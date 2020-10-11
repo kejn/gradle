@@ -65,8 +65,7 @@ import java.io.File
 class LocalFileDependencyBackedArtifactSetCodec(
     private val instantiator: Instantiator,
     private val attributesFactory: ImmutableAttributesFactory,
-    private val fileCollectionFactory: FileCollectionFactory,
-    private val transformedVariantFactory: TransformedVariantFactory
+    private val fileCollectionFactory: FileCollectionFactory
 ) : Codec<LocalFileDependencyBackedArtifactSet> {
     override suspend fun WriteContext.encode(value: LocalFileDependencyBackedArtifactSet) {
         // TODO - When the set of files is fixed (eg is `gradleApi()` or some hard-coded list of files):
@@ -129,7 +128,7 @@ class LocalFileDependencyBackedArtifactSetCodec(
             transforms.put(sourceAttributes, TransformSpec(targetAttributes, transformation))
         }
 
-        val selector = FixedVariantSelector(transforms, fileCollectionFactory, transformedVariantFactory)
+        val selector = FixedVariantSelector(transforms, fileCollectionFactory, NoOpTransformedVariantFactory)
         return LocalFileDependencyBackedArtifactSet(FixedFileMetadata(componentId, files), Specs.satisfyAll(), selector, artifactTypeRegistry)
     }
 }
@@ -225,16 +224,28 @@ class EmptyDependenciesResolverFactory(private val fileCollectionFactory: FileCo
     override fun create(componentIdentifier: ComponentIdentifier): ExecutionGraphDependenciesResolver {
         return object : ExecutionGraphDependenciesResolver {
             override fun computeDependencyNodes(transformationStep: TransformationStep): TaskDependencyContainer {
-                TODO("Not yet implemented")
+                throw UnsupportedOperationException("should not be called")
             }
 
             override fun selectedArtifacts(transformer: Transformer): FileCollection {
-                TODO("Not yet implemented")
+                throw UnsupportedOperationException("should not be called")
             }
 
             override fun computeArtifacts(transformer: Transformer): Try<ArtifactTransformDependencies> {
                 return Try.successful(DefaultArtifactTransformDependencies(fileCollectionFactory.empty()))
             }
         }
+    }
+}
+
+
+private
+object NoOpTransformedVariantFactory : TransformedVariantFactory {
+    override fun transformedExternalArtifacts(componentIdentifier: ComponentIdentifier, sourceVariant: ResolvedVariant, target: ImmutableAttributes, transformation: Transformation, dependenciesResolverFactory: ExtraExecutionGraphDependenciesResolverFactory): ResolvedArtifactSet {
+        throw UnsupportedOperationException("should not be called")
+    }
+
+    override fun transformedProjectArtifacts(componentIdentifier: ComponentIdentifier, sourceVariant: ResolvedVariant, target: ImmutableAttributes, transformation: Transformation, dependenciesResolverFactory: ExtraExecutionGraphDependenciesResolverFactory): ResolvedArtifactSet {
+        throw UnsupportedOperationException("should not be called")
     }
 }
