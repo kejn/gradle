@@ -68,7 +68,7 @@ class LocalFileDependencyBackedArtifactSetCodec(
     private val fileCollectionFactory: FileCollectionFactory
 ) : Codec<LocalFileDependencyBackedArtifactSet> {
     override suspend fun WriteContext.encode(value: LocalFileDependencyBackedArtifactSet) {
-        // TODO - When the set of files is fixed (eg is `gradleApi()` or some hard-coded list of files):
+        // TODO - When the set of files is fixed (eg `gradleApi()` or some hard-coded list of files):
         //   - calculate the attributes for each of the files eagerly rather than writing the mappings
         //   - when the selector would not apply a transform, then write only the files and nothing else
         //   - otherwise, write only the transform and attributes for each file rather than writing the transform registry
@@ -85,11 +85,14 @@ class LocalFileDependencyBackedArtifactSetCodec(
             }
         }
 
+        // Write the file extension -> transformation mappings
+        // This currently uses a dummy file and dummy set of variants to calculate the mappings.
+        // TODO - simplify extracting the mappings
+        // TODO - deduplicate this data, as the mapping is at least project scoped and almost always the same across all projects of a given type
         for (artifactTypeDefinition in value.artifactTypeRegistry.create()!!) {
             val sourceAttributes = value.artifactTypeRegistry.mapAttributesFor(File("thing.${artifactTypeDefinition.name}"))
             val recordingSet = RecordingVariantSet(value.dependencyMetadata.files, sourceAttributes)
             value.selector.select(recordingSet, recordingSet)
-            println("-> selected for ${artifactTypeDefinition.name}: ${recordingSet.targetAttributes} -> ${recordingSet.transformation?.displayName}")
             write(recordingSet.targetAttributes)
             if (recordingSet.targetAttributes != null) {
                 write(recordingSet.transformation)
@@ -224,11 +227,11 @@ class EmptyDependenciesResolverFactory(private val fileCollectionFactory: FileCo
     override fun create(componentIdentifier: ComponentIdentifier): ExecutionGraphDependenciesResolver {
         return object : ExecutionGraphDependenciesResolver {
             override fun computeDependencyNodes(transformationStep: TransformationStep): TaskDependencyContainer {
-                throw UnsupportedOperationException("should not be called")
+                throw UnsupportedOperationException("Should not be called")
             }
 
             override fun selectedArtifacts(transformer: Transformer): FileCollection {
-                throw UnsupportedOperationException("should not be called")
+                throw UnsupportedOperationException("Should not be called")
             }
 
             override fun computeArtifacts(transformer: Transformer): Try<ArtifactTransformDependencies> {
@@ -242,10 +245,10 @@ class EmptyDependenciesResolverFactory(private val fileCollectionFactory: FileCo
 private
 object NoOpTransformedVariantFactory : TransformedVariantFactory {
     override fun transformedExternalArtifacts(componentIdentifier: ComponentIdentifier, sourceVariant: ResolvedVariant, target: ImmutableAttributes, transformation: Transformation, dependenciesResolverFactory: ExtraExecutionGraphDependenciesResolverFactory): ResolvedArtifactSet {
-        throw UnsupportedOperationException("should not be called")
+        throw UnsupportedOperationException("Should not be called")
     }
 
     override fun transformedProjectArtifacts(componentIdentifier: ComponentIdentifier, sourceVariant: ResolvedVariant, target: ImmutableAttributes, transformation: Transformation, dependenciesResolverFactory: ExtraExecutionGraphDependenciesResolverFactory): ResolvedArtifactSet {
-        throw UnsupportedOperationException("should not be called")
+        throw UnsupportedOperationException("Should not be called")
     }
 }
