@@ -101,10 +101,10 @@ class LocalFileDependencyBackedArtifactSetCodec(
         // Write the file extension -> transformation mappings
         // This currently uses a dummy file and dummy set of variants to calculate the mappings.
         // TODO - simplify extracting the mappings
-        // TODO - deduplicate this data, as the mapping is at least project scoped and almost always the same across all projects of a given type
+        // TODO - deduplicate this data, as the mapping is project scoped and almost always the same across all projects of a given type
         val mappings = mutableMapOf<ImmutableAttributes, MappingSpec>()
         value.artifactTypeRegistry.visitArtifactTypes { type ->
-            val sourceAttributes = value.artifactTypeRegistry.mapAttributesFor(File("thing.${type}"))
+            val sourceAttributes = value.artifactTypeRegistry.mapAttributesFor(File("thing.$type"))
             val recordingSet = RecordingVariantSet(value.dependencyMetadata.files, sourceAttributes)
             val selected = value.selector.select(recordingSet, recordingSet)
             if (selected == ResolvedArtifactSet.EMPTY) {
