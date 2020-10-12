@@ -31,6 +31,7 @@ val propagatedEnvironmentVariables = listOf(
 
     // For Android tests
     "ANDROID_HOME",
+    "ANDROID_SDK_ROOT",
 
     // Used by Visual Studio
     "USERNAME",
@@ -74,7 +75,7 @@ val credentialsKeywords = listOf(
 
 fun Test.filterEnvironmentVariables() {
     environment = System.getenv().entries.mapNotNull(::sanitize).toMap()
-    environment.forEach { (key, value) ->
+    environment.forEach { (key, _) ->
         if (credentialsKeywords.any { key.contains(it, true) }) {
             throw IllegalArgumentException("Found sensitive data in filtered environment variables: $key")
         }

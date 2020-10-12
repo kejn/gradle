@@ -22,6 +22,7 @@ dependencies {
     implementation(libs.commonsLang)
     implementation(libs.commonsIo)
     implementation(libs.asm)
+    implementation(libs.inject)
 
     integTestImplementation(project(":logging"))
 
@@ -30,6 +31,7 @@ dependencies {
 
     integTestDistributionRuntimeOnly(project(":distributions-core"))
 
+    jmh(platform(project(":distributions-dependencies")))
     jmh(libs.bouncycastleProvider)
     jmh(libs.guava)
 }

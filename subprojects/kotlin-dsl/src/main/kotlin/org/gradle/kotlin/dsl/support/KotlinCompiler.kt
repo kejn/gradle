@@ -25,7 +25,7 @@ import org.jetbrains.kotlin.cli.common.KOTLIN_COMPILER_ENVIRONMENT_KEEPALIVE_PRO
 import org.jetbrains.kotlin.cli.common.config.addKotlinSourceRoot
 import org.jetbrains.kotlin.cli.common.config.addKotlinSourceRoots
 
-import org.jetbrains.kotlin.cli.common.messages.CompilerMessageLocation
+import org.jetbrains.kotlin.cli.common.messages.CompilerMessageSourceLocation
 import org.jetbrains.kotlin.cli.common.messages.CompilerMessageSeverity
 import org.jetbrains.kotlin.cli.common.messages.MessageCollector
 import org.jetbrains.kotlin.cli.common.messages.MessageUtil
@@ -259,7 +259,8 @@ inline fun <T> withCompilationExceptionHandler(messageCollector: LoggingMessageC
         messageCollector.report(
             CompilerMessageSeverity.EXCEPTION,
             ex.localizedMessage,
-            MessageUtil.psiElementToMessageLocation(ex.element))
+            MessageUtil.psiElementToMessageLocation(ex.element)
+        )
 
         throw IllegalStateException("Internal compiler error: ${ex.localizedMessage}", ex)
     }
@@ -375,11 +376,9 @@ fun CompilerConfiguration.addScriptDefinition(scriptDef: ScriptDefinition) {
 private
 fun Disposable.kotlinCoreEnvironmentFor(configuration: CompilerConfiguration): KotlinCoreEnvironment {
     org.jetbrains.kotlin.cli.common.environment.setIdeaIoUseFallback()
-    // Don't keep the Kotlin compiler environment alive as it might hold onto stale data.
-    // See https://youtrack.jetbrains.com/issue/KT-35394
     return SystemProperties.getInstance().withSystemProperty(
         KOTLIN_COMPILER_ENVIRONMENT_KEEPALIVE_PROPERTY,
-        "false"
+        "true"
     ) {
         KotlinCoreEnvironment.createForProduction(
             this,
@@ -396,7 +395,7 @@ fun messageCollectorFor(log: Logger, pathTranslation: (String) -> String = { it 
 
 
 internal
-data class ScriptCompilationError(val message: String, val location: CompilerMessageLocation?)
+data class ScriptCompilationError(val message: String, val location: CompilerMessageSourceLocation?)
 
 
 internal
@@ -413,7 +412,8 @@ data class ScriptCompilationException(val errors: List<ScriptCompilationError>) 
         get() = (
             listOf("Script compilation $errorPlural:")
                 + indentedErrorMessages()
-                + "${errors.size} $errorPlural")
+                + "${errors.size} $errorPlural"
+            )
             .joinToString("\n\n")
 
     private
@@ -427,16 +427,17 @@ data class ScriptCompilationException(val errors: List<ScriptCompilationError>) 
         } ?: error.message
 
     private
-    fun errorAt(location: CompilerMessageLocation, message: String): String {
+    fun errorAt(location: CompilerMessageSourceLocation, message: String): String {
         val columnIndent = " ".repeat(5 + maxLineNumberStringLength + 1 + location.column)
         return "Line ${lineNumber(location)}: ${location.lineContent}\n" +
             "^ $message".lines().joinToString(
                 prefix = columnIndent,
-                separator = "\n$columnIndent  $indent")
+                separator = "\n$columnIndent  $indent"
+            )
     }
 
     private
-    fun lineNumber(location: CompilerMessageLocation) =
+    fun lineNumber(location: CompilerMessageSourceLocation) =
         location.line.toString().padStart(maxLineNumberStringLength, '0')
 
     private
@@ -448,7 +449,7 @@ data class ScriptCompilationException(val errors: List<ScriptCompilationError>) 
 
     private
     val maxLineNumberStringLength: Int by lazy {
-        errors.mapNotNull { it.location?.line }.max().toString().length
+        errors.mapNotNull { it.location?.line }.maxOrNull()?.toString()?.length ?: 0
     }
 }
 
@@ -469,7 +470,7 @@ class LoggingMessageCollector(
 
     override fun clear() = errors.clear()
 
-    override fun report(severity: CompilerMessageSeverity, message: String, location: CompilerMessageLocation?) {
+    override fun report(severity: CompilerMessageSeverity, message: String, location: CompilerMessageSourceLocation?) {
 
         fun msg() =
             location?.run {

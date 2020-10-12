@@ -17,12 +17,8 @@
 package org.gradle.kotlin.dsl.accessors
 
 import org.gradle.api.internal.file.FileCollectionFactory
-import org.gradle.cache.internal.CacheKeyBuilder
-import org.gradle.internal.execution.CachingResult
-import org.gradle.internal.execution.ExecutionRequestContext
 import org.gradle.internal.execution.WorkExecutor
-import org.gradle.internal.fingerprint.FileCollectionSnapshotter
-import org.gradle.internal.fingerprint.impl.OutputFileCollectionFingerprinter
+import org.gradle.internal.fingerprint.classpath.ClasspathFingerprinter
 import org.gradle.internal.hash.ClassLoaderHierarchyHasher
 import org.gradle.kotlin.dsl.cache.KotlinDslWorkspaceProvider
 
@@ -34,33 +30,25 @@ object GradleScopeServices {
     fun createPluginAccessorClassPathGenerator(
         classLoaderHierarchyHasher: ClassLoaderHierarchyHasher,
         fileCollectionFactory: FileCollectionFactory,
-        fileCollectionSnapshotter: FileCollectionSnapshotter,
-        outputFileCollectionFingerprinter: OutputFileCollectionFingerprinter,
-        workExecutor: WorkExecutor<ExecutionRequestContext, CachingResult>,
+        workExecutor: WorkExecutor,
         workspaceProvider: KotlinDslWorkspaceProvider
     ) = PluginAccessorClassPathGenerator(
         classLoaderHierarchyHasher,
         fileCollectionFactory,
-        fileCollectionSnapshotter,
-        outputFileCollectionFingerprinter,
         workExecutor,
         workspaceProvider
     )
 
     @Suppress("unused")
     fun createProjectAccessorClassPathGenerator(
-        cacheKeyBuilder: CacheKeyBuilder,
+        classpathFingerprinter: ClasspathFingerprinter,
         fileCollectionFactory: FileCollectionFactory,
-        fileCollectionSnapshotter: FileCollectionSnapshotter,
-        outputFileCollectionFingerprinter: OutputFileCollectionFingerprinter,
         projectSchemaProvider: ProjectSchemaProvider,
-        workExecutor: WorkExecutor<ExecutionRequestContext, CachingResult>,
+        workExecutor: WorkExecutor,
         workspaceProvider: KotlinDslWorkspaceProvider
     ) = ProjectAccessorsClassPathGenerator(
-        cacheKeyBuilder,
+        classpathFingerprinter,
         fileCollectionFactory,
-        fileCollectionSnapshotter,
-        outputFileCollectionFingerprinter,
         projectSchemaProvider,
         workExecutor,
         workspaceProvider

@@ -21,6 +21,7 @@ import java.util.List;
 
 public abstract class PerformanceTestResult {
     private String testId;
+    private String testClass;
     private String testProject;
     private String teamCityBuildId;
     private String jvm;
@@ -50,6 +51,18 @@ public abstract class PerformanceTestResult {
     public static boolean hasRegressionChecks() {
         String check = System.getProperty("org.gradle.performance.regression.checks", "true");
         return Arrays.asList("true", "all").contains(check);
+    }
+
+    public PerformanceExperiment getPerformanceExperiment() {
+        return new PerformanceExperiment(testProject, new PerformanceScenario(testClass, testId));
+    }
+
+    public String getTestClass() {
+        return testClass;
+    }
+
+    public void setTestClass(String testClass) {
+        this.testClass = testClass;
     }
 
     public String getTestId() {

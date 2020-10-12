@@ -57,6 +57,12 @@ fun Requirements.requiresOs(os: Os) {
     contains("teamcity.agent.jvm.os.name", os.agentRequirement)
 }
 
+fun Requirements.requiresNoEc2Agent() {
+    doesNotContain("teamcity.agent.name", "ec2")
+    // US region agents have name "EC2-XXX"
+    doesNotContain("teamcity.agent.name", "EC2")
+}
+
 fun VcsSettings.filterDefaultBranch() {
     branchFilter = allBranchesFilter
 }
@@ -124,8 +130,7 @@ fun buildToolGradleParameters(daemon: Boolean = true, isContinue: Boolean = true
         "-PmaxParallelForks=%maxParallelForks%",
         "-s",
         if (daemon) "--daemon" else "--no-daemon",
-        if (isContinue) "--continue" else "",
-        "-Dorg.gradle.internal.tasks.createops"
+        if (isContinue) "--continue" else ""
     )
 
 fun Dependencies.compileAllDependency(compileAllId: String = "Gradle_Check_CompileAll") {

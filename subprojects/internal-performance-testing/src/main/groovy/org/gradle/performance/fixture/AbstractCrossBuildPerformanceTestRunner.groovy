@@ -22,7 +22,6 @@ import org.gradle.integtests.fixtures.executer.IntegrationTestBuildContext
 import org.gradle.integtests.fixtures.executer.UnderDevelopmentGradleDistribution
 import org.gradle.internal.time.Clock
 import org.gradle.internal.time.Time
-import org.gradle.performance.generator.TestProjects
 import org.gradle.performance.results.CrossBuildPerformanceResults
 import org.gradle.performance.results.DataReporter
 import org.gradle.performance.results.ResultsStore
@@ -48,6 +47,7 @@ abstract class AbstractCrossBuildPerformanceTestRunner<R extends CrossBuildPerfo
     String testGroup
     String testProject
     List<BuildExperimentSpec> specs = []
+    boolean measureGarbageCollection = true
 
     final DataReporter<R> reporter
     final ResultsStore resultsStore
@@ -76,12 +76,17 @@ abstract class AbstractCrossBuildPerformanceTestRunner<R extends CrossBuildPerfo
         buildMutators.add(buildMutator)
     }
 
+    void measureBuildOperation(String operation) {
+        measuredBuildOperations << operation
+    }
+
     List<String> getProjectMemoryOptions() {
         TestProjects.getProjectMemoryOptions(testProject)
     }
 
     protected void configureGradleSpec(GradleBuildExperimentSpec.GradleBuilder builder) {
         builder.measuredBuildOperations.addAll(measuredBuildOperations)
+        builder.measureGarbageCollection(measureGarbageCollection)
         builder.invocation.distribution(gradleDistribution)
     }
 
@@ -104,7 +109,8 @@ abstract class AbstractCrossBuildPerformanceTestRunner<R extends CrossBuildPerfo
     protected void finalizeSpec(BuildExperimentSpec.Builder builder) {
         assert builder.projectName
         assert builder.workingDirectory
-        builder.invocation.workingDirectory = new File(builder.workingDirectory, builder.displayName)
+        // Use a working directory based on the index of the spec
+        builder.invocation.workingDirectory = new File(builder.workingDirectory, String.format("%03d", specs.size()))
         if (builder instanceof GradleBuildExperimentSpec.GradleBuilder) {
             finalizeGradleSpec(builder)
         }
@@ -126,16 +132,20 @@ abstract class AbstractCrossBuildPerformanceTestRunner<R extends CrossBuildPerfo
         assert testId
 
         // TODO: Make sure cross build scenarios only run on one test project
-        Assume.assumeTrue(TestScenarioSelector.shouldRun(testClassName, testId, specs.first().projectName, resultsStore))
+        Assume.assumeTrue(TestScenarioSelector.shouldRun(testId))
 
         def results = newResult()
 
-        runAllSpecifications(results)
-
-        results.endTime = clock.getCurrentTime()
-
-        reporter.report(results)
-
+        try {
+            runAllSpecifications(results)
+        } catch (Exception e) {
+            // Print the exception here, so it is reported even when the reporting fails
+            e.printStackTrace()
+            throw e
+        } finally {
+            results.endTime = clock.getCurrentTime()
+            reporter.report(results)
+        }
         return results
     }
 

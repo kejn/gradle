@@ -46,6 +46,18 @@ class ConfigurationCacheKey(
     fun Hasher.putCacheKeyComponents() {
         putString(GradleVersion.current().version)
 
+        putString(
+            startParameter.settingsFile?.let {
+                relativePathOf(it, startParameter.rootDirectory)
+            } ?: ""
+        )
+
+        putAll(
+            startParameter.includedBuilds.map {
+                relativePathOf(it, startParameter.rootDirectory)
+            }
+        )
+
         val requestedTaskNames = startParameter.requestedTaskNames
         putAll(requestedTaskNames)
 

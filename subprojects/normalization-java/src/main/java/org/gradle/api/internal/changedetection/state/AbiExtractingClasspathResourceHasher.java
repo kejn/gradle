@@ -35,10 +35,19 @@ import java.util.Collections;
 public class AbiExtractingClasspathResourceHasher implements ResourceHasher {
     private static final Logger LOGGER = LoggerFactory.getLogger(AbiExtractingClasspathResourceHasher.class);
 
+    private final ApiClassExtractor extractor;
+
+    public AbiExtractingClasspathResourceHasher() {
+        this(new ApiClassExtractor(Collections.emptySet()));
+    }
+
+    public AbiExtractingClasspathResourceHasher(ApiClassExtractor extractor) {
+        this.extractor = extractor;
+    }
+
     @Nullable
     private HashCode hashClassBytes(byte[] classBytes) {
         // Use the ABI as the hash
-        ApiClassExtractor extractor = new ApiClassExtractor(Collections.emptySet());
         ClassReader reader = new ClassReader(classBytes);
         return extractor.extractApiClassFrom(reader)
             .map(Hashing::hashBytes)

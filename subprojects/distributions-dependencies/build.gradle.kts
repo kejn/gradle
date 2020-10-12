@@ -76,7 +76,7 @@ dependencies {
         api(libs.googleHttpClient)      { version { strictly(googleApiVersion) }}
         api(libs.googleHttpClientJackson2) { version { strictly(googleApiVersion) }}
         api(libs.googleOauthClient)     { version { strictly(googleApiVersion) }}
-        api(libs.gradleProfiler)        { version { strictly("0.14.0") }}
+        api(libs.gradleProfiler)        { version { strictly("0.15.0") }}
         api(libs.groovy)                { version { strictly("1.3-${libs.groovyVersion}"); because("emulating the Groovy 2.4-style groovy-all.jar, see https://github.com/gradle/gradle-groovy-all") }}
         api(libs.gson)                  { version { strictly("2.8.5") }}
         api(libs.guava)                 { version { strictly("27.1-android"); because("JRE variant introduces regression - https://github.com/google/guava/issues/3223") }}
@@ -101,8 +101,8 @@ dependencies {
         api(libs.jsr305)                { version { strictly("3.0.2") }}
         api(libs.julToSlf4j)            { version { strictly(slf4jVersion) }}
         api(libs.junit)                 { version { strictly("4.13") }}
-        api(libs.junit5Vintage)         { version { strictly("5.6.2") }}
-        api(libs.junitPlatform)         { version { strictly("1.6.2") }}
+        api(libs.junit5Vintage)         { version { strictly("5.7.0") }}
+        api(libs.junitPlatform)         { version { strictly("1.7.0") }}
         api(libs.jzlib)                 { version { strictly("1.1.3") }}
         api(libs.kryo)                  { version { strictly("2.24.0") }}
         api(libs.log4jToSlf4j)          { version { strictly(slf4jVersion) }}
@@ -158,17 +158,19 @@ dependencies {
         api(libs.guice)                 { version { strictly("2.0") }}
         api(libs.httpmime)              { version { strictly("4.5.10") }}
         api(libs.jacksonKotlin)         { version { strictly("2.9.2") }}
+        api(libs.javaParser)            { version { strictly("3.1.3") }}
         api(libs.jetty)                 { version { strictly(jettyVersion) }}
         api(libs.jettySecurity)         { version { strictly(jettyVersion) }}
-        api(libs.jettyWebApp)         { version { strictly(jettyVersion) }}
+        api(libs.jettyWebApp)           { version { strictly(jettyVersion) }}
         api(libs.jsoup)                 { version { strictly("1.11.3") }}
         api(libs.jtar)                  { version { strictly("2.3") }}
-        api(libs.kotlinCoroutines)      { version { strictly("1.3.3") }}
-        api(libs.kotlinCoroutinesDebug) { version { strictly("1.3.3") }}
+        api(libs.kotlinCoroutines)      { version { strictly("1.3.9") }}
+        api(libs.kotlinCoroutinesDebug) { version { strictly("1.3.9") }}
         api(libs.littleproxy)           { version { strictly("1.1.3"); because("latest officially released version is incompatible with Guava >= 20") }}
         api(libs.mina)                  { version { strictly("2.0.17") }}
         api(libs.mockitoKotlin)         { version { strictly("1.6.0") }}
         api(libs.mockitoKotlin2)        { version { strictly("2.1.0") }}
+        api(libs.mySqlConnector)        { version { strictly("8.0.17") }}
         api(libs.sampleCheck)           { version { strictly("0.12.6") }}
         api(libs.snappy)                { version { strictly("0.4") }}
         api(libs.spock)                 { version { strictly("1.3-groovy-2.5") }}

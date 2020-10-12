@@ -24,7 +24,7 @@ plugins {
 description = "Kotlin DSL Gradle Plugins deployed to the Plugin Portal"
 
 group = "org.gradle.kotlin"
-version = "1.3.7"
+version = "1.4.3"
 
 base.archivesBaseName = "plugins"
 
@@ -78,31 +78,36 @@ pluginPublish {
         name = "embeddedKotlin",
         shortDescription = "Embedded Kotlin Gradle Plugin",
         pluginId = "org.gradle.kotlin.embedded-kotlin",
-        pluginClass = "org.gradle.kotlin.dsl.plugins.embedded.EmbeddedKotlinPlugin")
+        pluginClass = "org.gradle.kotlin.dsl.plugins.embedded.EmbeddedKotlinPlugin"
+    )
 
     bundledGradlePlugin(
         name = "kotlinDsl",
         shortDescription = "Gradle Kotlin DSL Plugin",
         pluginId = "org.gradle.kotlin.kotlin-dsl",
-        pluginClass = "org.gradle.kotlin.dsl.plugins.dsl.KotlinDslPlugin")
+        pluginClass = "org.gradle.kotlin.dsl.plugins.dsl.KotlinDslPlugin"
+    )
 
     bundledGradlePlugin(
         name = "kotlinDslBase",
         shortDescription = "Gradle Kotlin DSL Base Plugin",
         pluginId = "org.gradle.kotlin.kotlin-dsl.base",
-        pluginClass = "org.gradle.kotlin.dsl.plugins.base.KotlinDslBasePlugin")
+        pluginClass = "org.gradle.kotlin.dsl.plugins.base.KotlinDslBasePlugin"
+    )
 
     bundledGradlePlugin(
         name = "kotlinDslCompilerSettings",
         shortDescription = "Gradle Kotlin DSL Compiler Settings",
         pluginId = "org.gradle.kotlin.kotlin-dsl.compiler-settings",
-        pluginClass = "org.gradle.kotlin.dsl.plugins.dsl.KotlinDslCompilerPlugins")
+        pluginClass = "org.gradle.kotlin.dsl.plugins.dsl.KotlinDslCompilerPlugins"
+    )
 
     bundledGradlePlugin(
         name = "kotlinDslPrecompiledScriptPlugins",
         shortDescription = "Gradle Kotlin DSL Precompiled Script Plugins",
         pluginId = "org.gradle.kotlin.kotlin-dsl.precompiled-script-plugins",
-        pluginClass = "org.gradle.kotlin.dsl.plugins.precompiled.PrecompiledScriptPlugins")
+        pluginClass = "org.gradle.kotlin.dsl.plugins.precompiled.PrecompiledScriptPlugins"
+    )
 }
 
 // TODO:kotlin-dsl investigate
@@ -114,13 +119,4 @@ tasks.noDaemonIntegTest.configure {
 // TODO:kotlin-dsl
 testFilesCleanup {
     policy.set(WhenNotEmpty.REPORT)
-}
-
-// TODO: workaround for https://github.com/gradle/gradlecom/issues/627
-//  which causes `publishPlugins` to fail with:
-//  > java.io.FileNotFoundException: .../subprojects/kotlin-dsl-plugins/src/main/java (No such file or directory)
-afterEvaluate {
-    configurations.archives.get().allArtifacts.removeIf {
-        it.name == "java"
-    }
 }

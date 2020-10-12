@@ -73,8 +73,8 @@ data class CIBuildModel(
                 TestCoverage(6, TestType.quickFeedbackCrossVersion, Os.WINDOWS, JvmCategory.MIN_VERSION),
                 TestCoverage(28, TestType.watchFs, Os.LINUX, JvmCategory.MAX_VERSION)),
             performanceTests = listOf(
-                PerformanceTestCoverage(6, PerformanceTestType.test, Os.WINDOWS, numberOfBuckets = 5),
-                PerformanceTestCoverage(7, PerformanceTestType.test, Os.MACOS, numberOfBuckets = 5)
+                PerformanceTestCoverage(6, PerformanceTestType.test, Os.WINDOWS, numberOfBuckets = 5, failsStage = false),
+                PerformanceTestCoverage(7, PerformanceTestType.test, Os.MACOS, numberOfBuckets = 5, failsStage = false)
             )
         ),
         Stage(StageNames.READY_FOR_RELEASE,
@@ -155,7 +155,13 @@ data class CIBuildModel(
             )),
         Stage(StageNames.EXPERIMENTAL_PERFORMANCE,
             trigger = Trigger.never,
-            runsIndependent = true
+            runsIndependent = true,
+            performanceTests = listOf(
+                PerformanceTestCoverage(10, PerformanceTestType.test, Os.LINUX, numberOfBuckets = 40, withoutDependencies = true),
+                PerformanceTestCoverage(11, PerformanceTestType.test, Os.WINDOWS, numberOfBuckets = 5, withoutDependencies = true),
+                PerformanceTestCoverage(12, PerformanceTestType.test, Os.MACOS, numberOfBuckets = 5, withoutDependencies = true),
+                PerformanceTestCoverage(13, PerformanceTestType.slow, Os.LINUX, numberOfBuckets = 30, withoutDependencies = true)
+            )
         )
     ),
     val subprojects: GradleSubprojectProvider

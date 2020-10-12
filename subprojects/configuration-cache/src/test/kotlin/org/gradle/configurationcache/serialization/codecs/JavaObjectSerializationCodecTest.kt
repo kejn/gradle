@@ -19,10 +19,10 @@ package org.gradle.configurationcache.serialization.codecs
 import com.nhaarman.mockitokotlin2.mock
 import org.gradle.api.Project
 import org.gradle.configurationcache.extensions.uncheckedCast
+import org.gradle.configurationcache.extensions.useToRun
 import org.gradle.configurationcache.problems.DocumentationSection.NotYetImplementedJavaSerialization
 import org.gradle.configurationcache.problems.PropertyKind
 import org.gradle.configurationcache.problems.PropertyTrace
-import org.gradle.kotlin.dsl.support.useToRun
 import org.hamcrest.CoreMatchers.equalTo
 import org.hamcrest.CoreMatchers.nullValue
 import org.hamcrest.CoreMatchers.sameInstance
@@ -105,7 +105,7 @@ class JavaObjectSerializationCodecTest : AbstractUserTypeCodecTest() {
 
     @Test
     fun `can handle writeReplace readResolve`() {
-        verifyRoundtripOf(::SerializableWriteReplaceBean) {
+        verifyRoundtripOf({ SerializableWriteReplaceBean() }) {
             assertThat(
                 it.value,
                 equalTo<Any>("42")
@@ -143,7 +143,7 @@ class JavaObjectSerializationCodecTest : AbstractUserTypeCodecTest() {
     @Ignore("wip")
     @Test
     fun `can handle Externalizable beans`() {
-        verifyRoundtripOf(::ExternalizableBean) {
+        verifyRoundtripOf({ ExternalizableBean() }) {
             assertThat(
                 it.value,
                 equalTo<Any>(42)
@@ -153,7 +153,7 @@ class JavaObjectSerializationCodecTest : AbstractUserTypeCodecTest() {
 
     @Test
     fun `can handle multiple writeObject implementations in the hierarchy`() {
-        verifyRoundtripOf(::MultiWriteObjectBean) { bean ->
+        verifyRoundtripOf({ MultiWriteObjectBean() }) { bean ->
             assertThat(
                 bean.stringValue,
                 equalTo("42")
@@ -175,7 +175,7 @@ class JavaObjectSerializationCodecTest : AbstractUserTypeCodecTest() {
 
     @Test
     fun `can handle writeObject without readObject`() {
-        verifyRoundtripOf(::SerializableWriteObjectOnlyBean) {
+        verifyRoundtripOf({ SerializableWriteObjectOnlyBean() }) {
             assertThat(
                 it.value,
                 equalTo<Any>("42")

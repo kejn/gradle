@@ -18,7 +18,7 @@ package org.gradle.internal.execution;
 
 import com.google.common.collect.ImmutableSortedMap;
 import org.gradle.api.Describable;
-import org.gradle.caching.internal.CacheableEntity;
+import org.gradle.api.file.FileCollection;
 import org.gradle.internal.execution.caching.CachingDisabledReason;
 import org.gradle.internal.execution.caching.CachingState;
 import org.gradle.internal.execution.history.ExecutionHistoryStore;
@@ -28,21 +28,64 @@ import org.gradle.internal.fingerprint.CurrentFileCollectionFingerprint;
 import org.gradle.internal.fingerprint.FileCollectionFingerprint;
 import org.gradle.internal.fingerprint.overlap.OverlappingOutputs;
 import org.gradle.internal.reflect.TypeValidationContext;
-import org.gradle.internal.snapshot.FileSystemSnapshot;
+import org.gradle.internal.snapshot.ValueSnapshot;
 import org.gradle.internal.snapshot.impl.ImplementationSnapshot;
 
 import javax.annotation.Nullable;
 import java.io.File;
 import java.time.Duration;
+import java.util.Map;
 import java.util.Optional;
 import java.util.function.Supplier;
 
-public interface UnitOfWork extends CacheableEntity, Describable {
+public interface UnitOfWork extends Describable {
+    /**
+     * Determine the identity of the work unit that uniquely identifies it
+     * among the other work units of the same type in the current build.
+     */
+    Identity identify(Map<String, ValueSnapshot> identityInputs, Map<String, CurrentFileCollectionFingerprint> identityFileInputs);
+
+    interface Identity {
+        /**
+         * The identity of the work unit that uniquely identifies it
+         * among the other work units of the same type in the current build.
+         */
+        String getUniqueId();
+    }
+
+    <T> T withWorkspace(String identity, WorkspaceAction<T> action);
+
+    interface WorkspaceAction<T> {
+        T executeInWorkspace(File workspace);
+    }
 
     /**
      * Executes the work synchronously.
      */
-    WorkResult execute(@Nullable InputChangesInternal inputChanges, InputChangesContext context);
+    WorkOutput execute(@Nullable InputChangesInternal inputChanges, InputChangesContext context);
+
+    interface WorkOutput {
+        WorkResult getDidWork();
+
+        Object getOutput();
+    }
+
+    enum WorkResult {
+        DID_WORK,
+        DID_NO_WORK
+    }
+
+    default Object loadRestoredOutput(File workspace) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * Returns the {@link ExecutionHistoryStore} to use to store the execution state of this work.
+     * When {@link Optional#empty()} no execution history will be maintained.
+     */
+    default Optional<ExecutionHistoryStore> getHistory() {
+        return Optional.empty();
+    }
 
     default Optional<Duration> getTimeout() {
         return Optional.empty();
@@ -63,19 +106,62 @@ public interface UnitOfWork extends CacheableEntity, Describable {
     void visitInputProperties(InputPropertyVisitor visitor);
 
     interface InputPropertyVisitor {
-        void visitInputProperty(String propertyName, Object value);
+        void visitInputProperty(String propertyName, IdentityKind identity, ValueSupplier value);
+    }
+
+    interface ValueSupplier {
+        @Nullable
+        Object getValue();
     }
 
     void visitInputFileProperties(InputFilePropertyVisitor visitor);
 
     interface InputFilePropertyVisitor {
-        void visitInputFileProperty(String propertyName, @Nullable Object value, boolean incremental, Supplier<CurrentFileCollectionFingerprint> fingerprinter);
+        void visitInputFileProperty(String propertyName, InputPropertyType type, IdentityKind identity, @Nullable Object value, Supplier<CurrentFileCollectionFingerprint> fingerprinter);
     }
 
-    void visitOutputProperties(OutputPropertyVisitor visitor);
+    enum InputPropertyType {
+        /**
+         * Non-incremental inputs.
+         */
+        NON_INCREMENTAL(false, false),
+
+        /**
+         * Incremental inputs.
+         */
+        INCREMENTAL(true, false),
+
+        /**
+         * These are the primary inputs to the incremental work item;
+         * if they are empty the work item shouldn't be executed.
+         */
+        PRIMARY(true, true);
+
+        private final boolean incremental;
+        private final boolean skipWhenEmpty;
+
+        InputPropertyType(boolean incremental, boolean skipWhenEmpty) {
+            this.incremental = incremental;
+            this.skipWhenEmpty = skipWhenEmpty;
+        }
+
+        public boolean isIncremental() {
+            return incremental;
+        }
+
+        public boolean isSkipWhenEmpty() {
+            return skipWhenEmpty;
+        }
+    }
+
+    enum IdentityKind {
+        NON_IDENTITY, IDENTITY
+    }
+
+    void visitOutputProperties(File workspace, OutputPropertyVisitor visitor);
 
     interface OutputPropertyVisitor {
-        void visitOutputProperty(String propertyName, TreeType type, File root);
+        void visitOutputProperty(String propertyName, TreeType type, File root, FileCollection contents);
     }
 
     default void visitLocalState(LocalStateVisitor visitor) {}
@@ -84,12 +170,18 @@ public interface UnitOfWork extends CacheableEntity, Describable {
         void visitLocalStateRoot(File localStateRoot);
     }
 
+    default void visitDestroyableRoots(DestroyableVisitor visitor) {}
+
+    interface DestroyableVisitor {
+        void visitDestroyableRoot(File destroyableRoot);
+    }
+
     long markExecutionTime();
 
     /**
      * Validate the work definition and configuration.
      */
-    void validate(WorkValidationContext validationContext);
+    default void validate(WorkValidationContext validationContext) {}
 
     interface WorkValidationContext {
         TypeValidationContext createContextFor(Class<?> type, boolean cacheable);
@@ -121,18 +213,6 @@ public interface UnitOfWork extends CacheableEntity, Describable {
     }
 
     /**
-     * Paths to locations changed by the unit of work.
-     *
-     * <p>
-     * We don't want to invalidate the whole file system mirror for artifact transformations, since I know exactly which parts need to be invalidated.
-     * For tasks though, we still need to invalidate everything.
-     * </p>
-     *
-     * @return {@link Optional#empty()} if the unit of work cannot guarantee that only some files have been changed or an iterable of the paths which were changed by the unit of work.
-     */
-    Iterable<String> getChangingOutputs();
-
-    /**
      * Whether overlapping outputs should be allowed or ignored.
      */
     default OverlappingOutputHandling getOverlappingOutputHandling() {
@@ -156,31 +236,6 @@ public interface UnitOfWork extends CacheableEntity, Describable {
      */
     default boolean shouldCleanupOutputsOnNonIncrementalExecution() {
         return true;
-    }
-
-    /**
-     * Takes a snapshot of the outputs before execution.
-     */
-    ImmutableSortedMap<String, FileSystemSnapshot> snapshotOutputsBeforeExecution();
-
-    /**
-     * Takes a snapshot of the outputs after execution.
-     */
-    ImmutableSortedMap<String, FileSystemSnapshot> snapshotOutputsAfterExecution();
-
-    /**
-     * Convert to fingerprints and filter out missing roots.
-     */
-    ImmutableSortedMap<String, CurrentFileCollectionFingerprint> fingerprintAndFilterOutputSnapshots(
-        ImmutableSortedMap<String, FileCollectionFingerprint> afterPreviousExecutionOutputFingerprints,
-        ImmutableSortedMap<String, FileSystemSnapshot> beforeExecutionOutputSnapshots,
-        ImmutableSortedMap<String, FileSystemSnapshot> afterExecutionOutputSnapshots,
-        boolean hasDetectedOverlappingOutputs
-    );
-
-    enum WorkResult {
-        DID_WORK,
-        DID_NO_WORK
     }
 
     enum InputChangeTrackingStrategy {
@@ -210,14 +265,6 @@ public interface UnitOfWork extends CacheableEntity, Describable {
         public boolean requiresInputChanges() {
             return requiresInputChanges;
         }
-    }
-
-    /**
-     * Returns the {@link ExecutionHistoryStore} to use to store the execution state of this work.
-     * When {@link Optional#empty()} no execution history will be maintained.
-     */
-    default Optional<ExecutionHistoryStore> getExecutionHistoryStore() {
-        return Optional.empty();
     }
 
     /**

@@ -17,7 +17,6 @@
 package org.gradle.configurationcache.fingerprint
 
 import org.gradle.api.execution.internal.TaskInputsListeners
-import org.gradle.api.internal.TaskInternal
 import org.gradle.api.internal.file.FileCollectionFactory
 import org.gradle.api.internal.file.FileCollectionInternal
 import org.gradle.api.internal.file.collections.DirectoryFileTreeFactory
@@ -25,7 +24,6 @@ import org.gradle.api.internal.provider.DefaultValueSourceProviderFactory
 import org.gradle.api.internal.provider.ValueSourceProviderFactory
 import org.gradle.configurationcache.BuildTreeListenerManager
 import org.gradle.configurationcache.extensions.hashCodeOf
-import org.gradle.configurationcache.extensions.serviceOf
 import org.gradle.configurationcache.initialization.ConfigurationCacheStartParameter
 import org.gradle.configurationcache.serialization.DefaultWriteContext
 import org.gradle.configurationcache.serialization.ReadContext
@@ -188,15 +186,7 @@ class ConfigurationCacheFingerprintController internal constructor(
         override fun hashCodeOf(file: File) =
             fileSystemAccess.hashCodeOf(file)
 
-        override fun fingerprintOf(
-            fileCollection: FileCollectionInternal,
-            owner: TaskInternal
-        ): HashCode =
-            fileCollectionFingerprinterFor(owner).fingerprint(fileCollection).hash
-
-        override fun fingerprintOf(
-            fileCollection: FileCollectionInternal
-        ): HashCode =
+        override fun fingerprintOf(fileCollection: FileCollectionInternal): HashCode =
             fileCollectionFingerprinter.fingerprint(fileCollection).hash
 
         override fun displayNameOf(fileOrDirectory: File): String =
@@ -208,10 +198,6 @@ class ConfigurationCacheFingerprintController internal constructor(
                 obtainedValue.valueSourceParametersType,
                 obtainedValue.valueSourceParameters
             )
-
-        private
-        fun fileCollectionFingerprinterFor(task: TaskInternal) =
-            task.serviceOf<AbsolutePathFileCollectionFingerprinter>()
 
         private
         val rootDirectory

@@ -51,7 +51,7 @@ class PerformanceTest(
     init = {
         this.uuid = performanceTestCoverage.asConfigurationId(model, "bucket${bucketIndex + 1}")
         this.id = AbsoluteId(uuid)
-        this.name = description
+        this.name = "$description${if (performanceTestCoverage.withoutDependencies) " (without dependencies)" else ""}"
         val type = performanceTestCoverage.type
         val os = performanceTestCoverage.os
         val performanceTestTaskNames = getPerformanceTestTaskNames(performanceSubProject, testProjects)
@@ -71,7 +71,8 @@ class PerformanceTest(
             steps {
                 preBuildSteps()
                 killGradleProcessesStep(os)
-                substDirOnWindows(os)
+                substDirOnWindows(os, model.parentBuildCache)
+
                 gradleWrapper {
                     name = "GRADLE_RUNNER"
                     tasks = ""
@@ -88,7 +89,7 @@ class PerformanceTest(
                             model.parentBuildCache.gradleParameters(os)
                         ).joinToString(separator = " ")
                 }
-                removeSubstDirOnWindows(os)
+                removeSubstDirOnWindows(os, model.parentBuildCache)
                 checkCleanM2(os)
             }
         }

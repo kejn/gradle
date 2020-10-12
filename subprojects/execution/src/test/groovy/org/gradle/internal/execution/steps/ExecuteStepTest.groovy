@@ -20,10 +20,11 @@ import org.gradle.internal.execution.ExecutionOutcome
 import org.gradle.internal.execution.InputChangesContext
 import org.gradle.internal.execution.UnitOfWork
 import org.gradle.internal.execution.history.changes.InputChangesInternal
+import org.gradle.internal.operations.TestBuildOperationExecutor
 import spock.lang.Unroll
 
 class ExecuteStepTest extends StepSpec<InputChangesContext> {
-    def step = new ExecuteStep<>()
+    def step = new ExecuteStep<>(new TestBuildOperationExecutor())
     def inputChanges = Mock(InputChangesInternal)
 
     @Override
@@ -37,10 +38,12 @@ class ExecuteStepTest extends StepSpec<InputChangesContext> {
         def result = step.execute(context)
 
         then:
-        result.outcome.get() == expectedOutcome
+        result.executionResult.get().outcome == expectedOutcome
 
         _ * context.inputChanges >> Optional.empty()
-        _ * work.execute(null, context) >> workResult
+        _ * work.execute(null, context) >> Stub(UnitOfWork.WorkOutput) {
+            getDidWork() >> workResult
+        }
         0 * _
 
         where:
@@ -55,8 +58,8 @@ class ExecuteStepTest extends StepSpec<InputChangesContext> {
         def result = step.execute(context)
 
         then:
-        !result.outcome.successful
-        result.outcome.failure.get() == failure
+        !result.executionResult.successful
+        result.executionResult.failure.get() == failure
 
         _ * context.inputChanges >> Optional.empty()
         _ * work.execute(null, context) >> { throw failure }
@@ -72,11 +75,13 @@ class ExecuteStepTest extends StepSpec<InputChangesContext> {
         def result = step.execute(context)
 
         then:
-        result.outcome.get() == expectedOutcome
+        result.executionResult.get().outcome == expectedOutcome
 
         _ * context.inputChanges >> Optional.of(inputChanges)
         1 * inputChanges.incremental >> incrementalExecution
-        _ * work.execute(inputChanges, context) >> workResult
+        _ * work.execute(inputChanges, context) >> Stub(UnitOfWork.WorkOutput) {
+            getDidWork() >> workResult
+        }
         0 * _
 
         where:

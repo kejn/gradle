@@ -218,7 +218,7 @@ inline fun <reified T> Project.container(): NamedDomainObjectContainer<T> =
  *
  * @see [Project.container]
  */
-inline fun <reified T> Project.container(noinline factory: (String) -> T): NamedDomainObjectContainer<T> =
+inline fun <reified T : Any> Project.container(noinline factory: (String) -> T): NamedDomainObjectContainer<T> =
     container(T::class.java, factory)
 
 
@@ -230,13 +230,13 @@ inline fun <reified T> Project.container(noinline factory: (String) -> T): Named
  * @return The dependency.
  */
 fun Project.gradleKotlinDsl(): Dependency =
-        DefaultSelfResolvingDependency(
-                OpaqueComponentIdentifier(DependencyFactory.ClassPathNotation.GRADLE_KOTLIN_DSL),
-                project.fileCollectionOf(
-                        gradleKotlinDslOf(project),
-                        "gradleKotlinDsl"
-                ) as FileCollectionInternal
-        )
+    DefaultSelfResolvingDependency(
+        OpaqueComponentIdentifier(DependencyFactory.ClassPathNotation.GRADLE_KOTLIN_DSL),
+        project.fileCollectionOf(
+            gradleKotlinDslOf(project),
+            "gradleKotlinDsl"
+        ) as FileCollectionInternal
+    )
 
 
 /**

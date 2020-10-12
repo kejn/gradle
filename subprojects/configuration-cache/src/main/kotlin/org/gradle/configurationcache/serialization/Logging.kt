@@ -22,14 +22,11 @@ import org.gradle.configurationcache.problems.DocumentationSection.NotYetImpleme
 import org.gradle.configurationcache.problems.DocumentationSection.RequirementsDisallowedTypes
 
 import org.gradle.configurationcache.problems.PropertyProblem
-import org.gradle.configurationcache.problems.StructuredMessage
 import org.gradle.configurationcache.problems.StructuredMessage.Companion.build
+import org.gradle.configurationcache.problems.StructuredMessageBuilder
 import org.gradle.configurationcache.problems.propertyDescriptionFor
 
 import kotlin.reflect.KClass
-
-
-typealias StructuredMessageBuilder = StructuredMessage.Builder.() -> Unit
 
 
 fun IsolateContext.logPropertyProblem(
@@ -49,16 +46,13 @@ fun IsolateContext.logUnsupported(
     actualType: Class<*>,
     documentationSection: DocumentationSection = RequirementsDisallowedTypes
 ) {
-    logPropertyProblem(action, PropertyProblem(trace,
-        build {
-            text("cannot ")
-            text(action)
-            text(" object of type ")
-            reference(GeneratedSubclasses.unpack(actualType))
-            text(", a subtype of ")
-            reference(baseType)
-            text(", as these are not supported with the configuration cache.")
-        }, null, documentationSection))
+    logUnsupported(action, documentationSection) {
+        text(" object of type ")
+        reference(GeneratedSubclasses.unpack(actualType))
+        text(", a subtype of ")
+        reference(baseType)
+        text(",")
+    }
 }
 
 
@@ -68,14 +62,33 @@ fun IsolateContext.logUnsupported(
     baseType: KClass<*>,
     documentationSection: DocumentationSection = RequirementsDisallowedTypes
 ) {
-    logPropertyProblem(action, PropertyProblem(trace,
-        build {
-            text("cannot ")
-            text(action)
-            text(" object of type ")
-            reference(baseType)
-            text(" as these are not supported with the configuration cache.")
-        }, null, documentationSection))
+    logUnsupported(action, documentationSection) {
+        text(" object of type ")
+        reference(baseType)
+    }
+}
+
+
+internal
+fun IsolateContext.logUnsupported(
+    action: String,
+    documentationSection: DocumentationSection = RequirementsDisallowedTypes,
+    unsupportedThings: StructuredMessageBuilder
+) {
+    logPropertyProblem(
+        action,
+        PropertyProblem(
+            trace,
+            build {
+                text("cannot ")
+                text(action)
+                unsupportedThings()
+                text(" as these are not supported with the configuration cache.")
+            },
+            null,
+            documentationSection
+        )
+    )
 }
 
 
@@ -90,9 +103,15 @@ fun IsolateContext.logNotImplemented(baseType: Class<*>) {
 
 internal
 fun IsolateContext.logNotImplemented(feature: String, documentationSection: DocumentationSection = NotYetImplemented) {
-    onProblem(PropertyProblem(trace, build {
-        text("support for $feature is not yet implemented with the configuration cache.")
-    }, null, documentationSection))
+    onProblem(
+        PropertyProblem(
+            trace,
+            build {
+                text("support for $feature is not yet implemented with the configuration cache.")
+            },
+            null, documentationSection
+        )
+    )
 }
 
 
@@ -112,15 +131,16 @@ fun IsolateContext.logPropertyProblem(action: String, problem: PropertyProblem) 
 
 internal
 inline fun <T : WriteContext, R> T.withDebugFrame(name: () -> String, writeAction: T.() -> R): R {
-    val frameName: String? = if (tracer != null) name() else null
-    try {
-        frameName?.let {
-            tracer!!.open(it)
-        }
-        return writeAction()
-    } finally {
-        frameName?.let {
-            tracer!!.close(it)
+    val tracer = this.tracer
+    return if (tracer == null) {
+        writeAction()
+    } else {
+        val frameName = name()
+        try {
+            tracer.open(frameName)
+            writeAction()
+        } finally {
+            tracer.close(frameName)
         }
     }
 }

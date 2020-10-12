@@ -18,7 +18,6 @@ package org.gradle.performance.fixture
 
 import com.google.common.annotations.VisibleForTesting
 import com.google.common.base.Splitter
-import com.google.common.collect.ImmutableList
 import groovy.transform.CompileStatic
 import groovy.transform.TypeCheckingMode
 import org.apache.commons.io.FileUtils
@@ -30,7 +29,6 @@ import org.gradle.internal.jvm.Jvm
 import org.gradle.internal.os.OperatingSystem
 import org.gradle.internal.time.Clock
 import org.gradle.internal.time.Time
-import org.gradle.performance.generator.TestProjects
 import org.gradle.performance.results.CrossVersionPerformanceResults
 import org.gradle.performance.results.DataReporter
 import org.gradle.performance.results.MeasuredOperationList
@@ -40,8 +38,9 @@ import org.gradle.performance.util.Git
 import org.gradle.profiler.BuildAction
 import org.gradle.profiler.BuildMutator
 import org.gradle.profiler.GradleInvoker
+import org.gradle.profiler.GradleInvokerBuildAction
 import org.gradle.profiler.InvocationSettings
-import org.gradle.profiler.ToolingApiInvoker
+import org.gradle.profiler.ToolingApiGradleClient
 import org.gradle.tooling.LongRunningOperation
 import org.gradle.tooling.ProjectConnection
 import org.gradle.util.GradleVersion
@@ -87,6 +86,7 @@ class CrossVersionPerformanceTestRunner extends PerformanceTestSpec {
      * Minimum base version to be used. For example, a 6.0-nightly target version is OK if minimumBaseVersion is 6.0.
      */
     String minimumBaseVersion
+    boolean measureGarbageCollection = true
     private final List<Function<InvocationSettings, BuildMutator>> buildMutators = []
     private final List<String> measuredBuildOperations = []
     private BuildAction buildAction
@@ -116,6 +116,7 @@ class CrossVersionPerformanceTestRunner extends PerformanceTestSpec {
         assumeShouldRun()
 
         def results = new CrossVersionPerformanceResults(
+            testClass: testClassName,
             testId: testId,
             previousTestIds: previousTestIds.collect { it.toString() }, // Convert GString instances
             testProject: testProject,
@@ -136,21 +137,21 @@ class CrossVersionPerformanceTestRunner extends PerformanceTestSpec {
         )
 
         def baselineVersions = toBaselineVersions(releases, targetVersions, minimumBaseVersion).collect { results.baseline(it) }
-        def allVersions = ImmutableList.<String>builder()
-            .add('current')
-            .addAll(baselineVersions*.version as List<String>)
-            .build()
-        int maxWorkingDirLength = allVersions.collect { sanitizeVersionWorkingDir(it) }*.length().max()
+        try {
+            int runIndex = 0
+            runVersion(testId, current, perVersionWorkingDirectory(runIndex++), results.current)
 
-        runVersion(testId, current, perVersionWorkingDirectory('current', maxWorkingDirLength), results.current)
-
-        baselineVersions.each { baselineVersion ->
-            runVersion(testId, buildContext.distribution(baselineVersion.version), perVersionWorkingDirectory(baselineVersion.version, maxWorkingDirLength), baselineVersion.results)
+            baselineVersions.each { baselineVersion ->
+                runVersion(testId, buildContext.distribution(baselineVersion.version), perVersionWorkingDirectory(runIndex++), baselineVersion.results)
+            }
+        } catch (Exception e) {
+            // Print the exception here, so it is reported even when the reporting fails
+            e.printStackTrace()
+            throw e
+        } finally {
+            results.endTime = clock.getCurrentTime()
+            reporter.report(results)
         }
-
-        results.endTime = clock.getCurrentTime()
-
-        reporter.report(results)
 
         return results
     }
@@ -166,11 +167,12 @@ class CrossVersionPerformanceTestRunner extends PerformanceTestSpec {
             throw new IllegalStateException("Working directory has not been specified")
         }
 
-        Assume.assumeTrue(TestScenarioSelector.shouldRun(testClassName, testId, testProject, resultsStore))
+        Assume.assumeTrue(TestScenarioSelector.shouldRun(testId))
     }
 
-    private File perVersionWorkingDirectory(String version, int maxWorkingDirLength) {
-        def perVersion = new File(workingDir, sanitizeVersionWorkingDir(version).padRight(maxWorkingDirLength, '_'))
+    private File perVersionWorkingDirectory(int runIndex) {
+        def versionWorkingDirName = String.format('%03d', runIndex)
+        def perVersion = new File(workingDir, versionWorkingDirName)
         if (!perVersion.exists()) {
             perVersion.mkdirs()
         } else {
@@ -286,6 +288,7 @@ class CrossVersionPerformanceTestRunner extends PerformanceTestSpec {
             .invocationCount(runs)
             .buildMutators(buildMutators)
             .measuredBuildOperations(measuredBuildOperations)
+            .measureGarbageCollection(measureGarbageCollection)
             .invocation {
                 workingDirectory(workingDir)
                 distribution(new PerformanceTestGradleDistribution(dist, workingDir))
@@ -314,7 +317,7 @@ class CrossVersionPerformanceTestRunner extends PerformanceTestSpec {
     }
 }
 
-class ToolingApiAction<T extends LongRunningOperation> implements BuildAction {
+class ToolingApiAction<T extends LongRunningOperation> extends GradleInvokerBuildAction {
     private final Function<ProjectConnection, T> initialAction
     private final String displayName
     private Consumer<T> tapiAction
@@ -345,11 +348,8 @@ class ToolingApiAction<T extends LongRunningOperation> implements BuildAction {
 
     @Override
     void run(GradleInvoker buildInvoker, List<String> gradleArgs, List<String> jvmArgs) {
-        // TODO: Add a public API to configure this in a nice way on the Gradle profiler side
-        def toolingApiInvoker = (ToolingApiInvoker) buildInvoker
-        def projectConnection = toolingApiInvoker.projectConnection
-        def longRunningOperation = initialAction.apply(projectConnection)
-        toolingApiInvoker.run(longRunningOperation) { builder ->
+        def toolingApiInvoker = (ToolingApiGradleClient) buildInvoker
+        toolingApiInvoker.runOperation(initialAction) { builder ->
             builder.setJvmArguments(jvmArgs)
             builder.withArguments(gradleArgs)
             tapiAction.accept(builder)

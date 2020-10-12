@@ -16,17 +16,17 @@
 
 package org.gradle.configurationcache
 
-import org.gradle.api.internal.SettingsInternal
 import org.gradle.configuration.internal.UserCodeApplicationContext
 import org.gradle.configurationcache.fingerprint.ConfigurationCacheFingerprintController
+import org.gradle.configurationcache.initialization.ConfigurationCacheBuildEnablement
 import org.gradle.configurationcache.initialization.ConfigurationCacheProblemsListener
 import org.gradle.configurationcache.initialization.ConfigurationCacheStartParameter
 import org.gradle.configurationcache.initialization.DefaultConfigurationCacheProblemsListener
 import org.gradle.configurationcache.initialization.DefaultInjectedClasspathInstrumentationStrategy
 import org.gradle.configurationcache.initialization.NoOpConfigurationCacheProblemsListener
 import org.gradle.configurationcache.problems.ConfigurationCacheProblems
+import org.gradle.configurationcache.problems.ProblemsListener
 import org.gradle.configurationcache.serialization.beans.BeanConstructors
-import org.gradle.internal.build.PublicBuildPath
 import org.gradle.internal.event.ListenerManager
 import org.gradle.internal.service.ServiceRegistration
 import org.gradle.internal.service.scopes.AbstractPluginServiceRegistry
@@ -54,6 +54,7 @@ class ConfigurationCacheServices : AbstractPluginServiceRegistry() {
 
     override fun registerBuildServices(registration: ServiceRegistration) {
         registration.run {
+            add(ConfigurationCacheBuildEnablement::class.java)
             add(ConfigurationCacheClassLoaderScopeRegistryListener::class.java)
             add(ConfigurationCacheBuildScopeListenerManagerAction::class.java)
             add(SystemPropertyAccessListener::class.java)
@@ -67,6 +68,7 @@ class ConfigurationCacheServices : AbstractPluginServiceRegistry() {
         registration.run {
             add(ConfigurationCacheRepository::class.java)
             add(ConfigurationCacheHost::class.java)
+            add(ConfigurationCacheIO::class.java)
             add(DefaultConfigurationCache::class.java)
         }
     }
@@ -75,15 +77,14 @@ class ConfigurationCacheServices : AbstractPluginServiceRegistry() {
 
 class BuildServicesProvider {
     fun createConfigurationCacheProblemsListener(
-        buildPath: PublicBuildPath,
-        startParameter: ConfigurationCacheStartParameter,
-        problemsListener: ConfigurationCacheProblems,
+        buildEnablement: ConfigurationCacheBuildEnablement,
+        problemsListener: ProblemsListener,
         userCodeApplicationContext: UserCodeApplicationContext
     ): ConfigurationCacheProblemsListener {
-        if (!startParameter.isEnabled || buildPath.buildPath.name == SettingsInternal.BUILD_SRC) {
-            return NoOpConfigurationCacheProblemsListener()
+        return if (buildEnablement.isEnabledForCurrentBuild) {
+            DefaultConfigurationCacheProblemsListener(problemsListener, userCodeApplicationContext)
         } else {
-            return DefaultConfigurationCacheProblemsListener(problemsListener, userCodeApplicationContext)
+            NoOpConfigurationCacheProblemsListener()
         }
     }
 }

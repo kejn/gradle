@@ -16,11 +16,9 @@
 package org.gradle.api.internal.tasks.execution;
 
 import com.google.common.collect.ImmutableCollection;
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSortedMap;
 import com.google.common.collect.ImmutableSortedSet;
 import com.google.common.collect.Lists;
-import com.google.common.collect.Maps;
 import org.gradle.api.execution.TaskActionListener;
 import org.gradle.api.execution.TaskExecutionListener;
 import org.gradle.api.file.FileCollection;
@@ -42,8 +40,9 @@ import org.gradle.api.internal.tasks.TaskExecuterResult;
 import org.gradle.api.internal.tasks.TaskExecutionContext;
 import org.gradle.api.internal.tasks.TaskExecutionOutcome;
 import org.gradle.api.internal.tasks.TaskStateInternal;
-import org.gradle.api.internal.tasks.properties.CacheableOutputFilePropertySpec;
 import org.gradle.api.internal.tasks.properties.InputFilePropertySpec;
+import org.gradle.api.internal.tasks.properties.InputParameterUtils;
+import org.gradle.api.internal.tasks.properties.InputPropertySpec;
 import org.gradle.api.internal.tasks.properties.OutputFilePropertySpec;
 import org.gradle.api.internal.tasks.properties.TaskProperties;
 import org.gradle.api.tasks.CacheableTask;
@@ -58,7 +57,6 @@ import org.gradle.internal.exceptions.DefaultMultiCauseException;
 import org.gradle.internal.exceptions.MultiCauseException;
 import org.gradle.internal.execution.CachingResult;
 import org.gradle.internal.execution.ExecutionOutcome;
-import org.gradle.internal.execution.ExecutionRequestContext;
 import org.gradle.internal.execution.InputChangesContext;
 import org.gradle.internal.execution.UnitOfWork;
 import org.gradle.internal.execution.WorkExecutor;
@@ -68,14 +66,11 @@ import org.gradle.internal.execution.caching.CachingState;
 import org.gradle.internal.execution.history.AfterPreviousExecutionState;
 import org.gradle.internal.execution.history.ExecutionHistoryStore;
 import org.gradle.internal.execution.history.changes.InputChangesInternal;
-import org.gradle.internal.execution.impl.OutputFilterUtil;
 import org.gradle.internal.file.ReservedFileSystemLocationRegistry;
 import org.gradle.internal.fingerprint.CurrentFileCollectionFingerprint;
 import org.gradle.internal.fingerprint.FileCollectionFingerprint;
 import org.gradle.internal.fingerprint.FileCollectionFingerprinter;
 import org.gradle.internal.fingerprint.FileCollectionFingerprinterRegistry;
-import org.gradle.internal.fingerprint.impl.AbsolutePathFingerprintingStrategy;
-import org.gradle.internal.fingerprint.impl.DefaultCurrentFileCollectionFingerprint;
 import org.gradle.internal.fingerprint.overlap.OverlappingOutputs;
 import org.gradle.internal.hash.ClassLoaderHierarchyHasher;
 import org.gradle.internal.operations.BuildOperationContext;
@@ -83,7 +78,7 @@ import org.gradle.internal.operations.BuildOperationDescriptor;
 import org.gradle.internal.operations.BuildOperationExecutor;
 import org.gradle.internal.operations.BuildOperationRef;
 import org.gradle.internal.operations.RunnableBuildOperation;
-import org.gradle.internal.snapshot.FileSystemSnapshot;
+import org.gradle.internal.snapshot.ValueSnapshot;
 import org.gradle.internal.work.AsyncWorkTracker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -99,6 +94,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
+import static org.gradle.internal.execution.UnitOfWork.IdentityKind.NON_IDENTITY;
 import static org.gradle.internal.work.AsyncWorkTracker.ProjectLockRetention.RELEASE_AND_REACQUIRE_PROJECT_LOCKS;
 import static org.gradle.internal.work.AsyncWorkTracker.ProjectLockRetention.RELEASE_PROJECT_LOCKS;
 
@@ -119,7 +115,6 @@ public class ExecuteActionsTaskExecuter implements TaskExecuter {
     private final BuildCacheState buildCacheState;
     private final ScanPluginState scanPluginState;
 
-    private final TaskSnapshotter taskSnapshotter;
     private final ExecutionHistoryStore executionHistoryStore;
     private final BuildOperationExecutor buildOperationExecutor;
     private final AsyncWorkTracker asyncWorkTracker;
@@ -127,7 +122,7 @@ public class ExecuteActionsTaskExecuter implements TaskExecuter {
     private final TaskCacheabilityResolver taskCacheabilityResolver;
     private final FileCollectionFingerprinterRegistry fingerprinterRegistry;
     private final ClassLoaderHierarchyHasher classLoaderHierarchyHasher;
-    private final WorkExecutor<ExecutionRequestContext, CachingResult> workExecutor;
+    private final WorkExecutor workExecutor;
     private final ListenerManager listenerManager;
     private final ReservedFileSystemLocationRegistry reservedFileSystemLocationRegistry;
     private final EmptySourceTaskSkipper emptySourceTaskSkipper;
@@ -138,7 +133,6 @@ public class ExecuteActionsTaskExecuter implements TaskExecuter {
         BuildCacheState buildCacheState,
         ScanPluginState scanPluginState,
 
-        TaskSnapshotter taskSnapshotter,
         ExecutionHistoryStore executionHistoryStore,
         BuildOperationExecutor buildOperationExecutor,
         AsyncWorkTracker asyncWorkTracker,
@@ -146,7 +140,7 @@ public class ExecuteActionsTaskExecuter implements TaskExecuter {
         TaskCacheabilityResolver taskCacheabilityResolver,
         FileCollectionFingerprinterRegistry fingerprinterRegistry,
         ClassLoaderHierarchyHasher classLoaderHierarchyHasher,
-        WorkExecutor<ExecutionRequestContext, CachingResult> workExecutor,
+        WorkExecutor workExecutor,
         ListenerManager listenerManager,
         ReservedFileSystemLocationRegistry reservedFileSystemLocationRegistry,
         EmptySourceTaskSkipper emptySourceTaskSkipper,
@@ -156,7 +150,6 @@ public class ExecuteActionsTaskExecuter implements TaskExecuter {
         this.buildCacheState = buildCacheState;
         this.scanPluginState = scanPluginState;
 
-        this.taskSnapshotter = taskSnapshotter;
         this.executionHistoryStore = executionHistoryStore;
         this.buildOperationExecutor = buildOperationExecutor;
         this.asyncWorkTracker = asyncWorkTracker;
@@ -184,19 +177,9 @@ public class ExecuteActionsTaskExecuter implements TaskExecuter {
     }
 
     private TaskExecuterResult executeIfValid(TaskInternal task, TaskStateInternal state, TaskExecutionContext context, TaskExecution work) {
-        CachingResult result = workExecutor.execute(new ExecutionRequestContext() {
-            @Override
-            public UnitOfWork getWork() {
-                return work;
-            }
-
-            @Override
-            public Optional<String> getRebuildReason() {
-                return context.getTaskExecutionMode().getRebuildReason();
-            }
-        });
-        result.getOutcome().ifSuccessfulOrElse(
-            outcome -> state.setOutcome(TaskExecutionOutcome.valueOf(outcome)),
+        CachingResult result = workExecutor.execute(work, context.getTaskExecutionMode().getRebuildReason().orElse(null));
+        result.getExecutionResult().ifSuccessfulOrElse(
+            executionResult -> state.setOutcome(TaskExecutionOutcome.valueOf(executionResult.getOutcome())),
             failure -> state.setOutcome(new TaskExecutionException(task, failure))
         );
         return new TaskExecuterResult() {
@@ -207,8 +190,8 @@ public class ExecuteActionsTaskExecuter implements TaskExecuter {
 
             @Override
             public boolean executedIncrementally() {
-                return result.getOutcome()
-                    .map(executionOutcome -> executionOutcome == ExecutionOutcome.EXECUTED_INCREMENTALLY)
+                return result.getExecutionResult()
+                    .map(executionResult -> executionResult.getOutcome() == ExecutionOutcome.EXECUTED_INCREMENTALLY)
                     .getOrMapFailure(throwable -> false);
             }
 
@@ -245,19 +228,35 @@ public class ExecuteActionsTaskExecuter implements TaskExecuter {
         }
 
         @Override
-        public String getIdentity() {
-            return task.getPath();
+        public Identity identify(Map<String, ValueSnapshot> identityInputs, Map<String, CurrentFileCollectionFingerprint> identityFileInputs) {
+            return new Identity() {
+                @Override
+                public String getUniqueId() {
+                    return task.getPath();
+                }
+            };
         }
 
         @Override
-        public WorkResult execute(@Nullable InputChangesInternal inputChanges, InputChangesContext context) {
+        public WorkOutput execute(@Nullable InputChangesInternal inputChanges, InputChangesContext context) {
             FileCollection previousFiles = context.getAfterPreviousExecutionState()
                 .map(afterPreviousExecutionState -> (FileCollection) new PreviousOutputFileCollection(task, afterPreviousExecutionState))
                 .orElseGet(fileCollectionFactory::empty);
             TaskOutputsInternal outputs = task.getOutputs();
             outputs.setPreviousOutputFiles(previousFiles);
             try {
-                return executeWithPreviousOutputFiles(inputChanges);
+                WorkResult didWork = executeWithPreviousOutputFiles(inputChanges);
+                return new WorkOutput() {
+                    @Override
+                    public WorkResult getDidWork() {
+                        return didWork;
+                    }
+
+                    @Override
+                    public Object getOutput() {
+                        throw new UnsupportedOperationException();
+                    }
+                };
             } finally {
                 outputs.setPreviousOutputFiles(null);
             }
@@ -277,10 +276,15 @@ public class ExecuteActionsTaskExecuter implements TaskExecuter {
         }
 
         @Override
-        public Optional<ExecutionHistoryStore> getExecutionHistoryStore() {
+        public Optional<ExecutionHistoryStore> getHistory() {
             return context.getTaskExecutionMode().isTaskHistoryMaintained()
                 ? Optional.of(executionHistoryStore)
                 : Optional.empty();
+        }
+
+        @Override
+        public <T> T withWorkspace(String identity, WorkspaceAction<T> action) {
+            return action.executeInWorkspace(null);
         }
 
         @Override
@@ -295,11 +299,9 @@ public class ExecuteActionsTaskExecuter implements TaskExecuter {
 
         @Override
         public void visitInputProperties(InputPropertyVisitor visitor) {
-            Map<String, Object> inputPropertyValues = context.getTaskProperties().getInputPropertyValues().get();
-            for (Map.Entry<String, Object> entry : inputPropertyValues.entrySet()) {
-                String propertyName = entry.getKey();
-                Object value = entry.getValue();
-                visitor.visitInputProperty(propertyName, value);
+            ImmutableSortedSet<InputPropertySpec> inputProperties = context.getTaskProperties().getInputProperties();
+            for (InputPropertySpec inputProperty : inputProperties) {
+                visitor.visitInputProperty(inputProperty.getPropertyName(), NON_IDENTITY, () -> InputParameterUtils.prepareInputParameterValue(inputProperty, task));
             }
         }
 
@@ -308,13 +310,16 @@ public class ExecuteActionsTaskExecuter implements TaskExecuter {
             ImmutableSortedSet<InputFilePropertySpec> inputFileProperties = context.getTaskProperties().getInputFileProperties();
             for (InputFilePropertySpec inputFileProperty : inputFileProperties) {
                 Object value = inputFileProperty.getValue();
-                boolean incremental = inputFileProperty.isIncremental()
-                    // SkipWhenEmpty implies incremental.
-                    // If this file property is empty, then we clean up the previously generated outputs.
-                    // That means that there is a very close relation between the file property and the output.
-                    || inputFileProperty.isSkipWhenEmpty();
+                // SkipWhenEmpty implies incremental.
+                // If this file property is empty, then we clean up the previously generated outputs.
+                // That means that there is a very close relation between the file property and the output.
+                InputPropertyType type = inputFileProperty.isSkipWhenEmpty()
+                    ? InputPropertyType.PRIMARY
+                    : inputFileProperty.isIncremental()
+                        ? InputPropertyType.INCREMENTAL
+                        : InputPropertyType.NON_INCREMENTAL;
                 String propertyName = inputFileProperty.getPropertyName();
-                visitor.visitInputFileProperty(propertyName, value, incremental, () -> {
+                visitor.visitInputFileProperty(propertyName, type, NON_IDENTITY, value, () -> {
                     FileCollectionFingerprinter fingerprinter = fingerprinterRegistry.getFingerprinter(inputFileProperty.getNormalizer());
                     return fingerprinter.fingerprint(inputFileProperty.getPropertyFiles());
                 });
@@ -322,34 +327,26 @@ public class ExecuteActionsTaskExecuter implements TaskExecuter {
         }
 
         @Override
-        public void visitOutputProperties(OutputPropertyVisitor visitor) {
+        public void visitOutputProperties(File workspace, OutputPropertyVisitor visitor) {
             for (OutputFilePropertySpec property : context.getTaskProperties().getOutputFileProperties()) {
                 File outputFile = property.getOutputFile();
                 if (outputFile != null) {
-                    visitor.visitOutputProperty(property.getPropertyName(), property.getOutputType(), outputFile);
+                    visitor.visitOutputProperty(property.getPropertyName(), property.getOutputType(), outputFile, property.getPropertyFiles());
                 }
-            }
-        }
-
-        @Override
-        public void visitOutputTrees(CacheableTreeVisitor visitor) {
-            for (OutputFilePropertySpec property : context.getTaskProperties().getOutputFileProperties()) {
-                if (!(property instanceof CacheableOutputFilePropertySpec)) {
-                    throw new IllegalStateException("Non-cacheable property: " + property);
-                }
-                File cacheRoot = property.getOutputFile();
-                if (cacheRoot == null) {
-                    continue;
-                }
-
-                visitor.visitOutputTree(property.getPropertyName(), property.getOutputType(), cacheRoot);
             }
         }
 
         @Override
         public void visitLocalState(LocalStateVisitor visitor) {
-            for (File localStateFile : context.getTaskProperties().getLocalStateFiles()) {
-                visitor.visitLocalStateRoot(localStateFile);
+            for (File localStateRoot : context.getTaskProperties().getLocalStateFiles()) {
+                visitor.visitLocalStateRoot(localStateRoot);
+            }
+        }
+
+        @Override
+        public void visitDestroyableRoots(DestroyableVisitor visitor) {
+            for (File destroyableRoot : context.getTaskProperties().getDestroyableFiles()) {
+                visitor.visitDestroyableRoot(destroyableRoot);
             }
         }
 
@@ -361,15 +358,6 @@ public class ExecuteActionsTaskExecuter implements TaskExecuter {
         @Override
         public boolean shouldCleanupOutputsOnNonIncrementalExecution() {
             return getInputChangeTrackingStrategy() == InputChangeTrackingStrategy.INCREMENTAL_PARAMETERS;
-        }
-
-        @Override
-        public Iterable<String> getChangingOutputs() {
-            ImmutableList.Builder<String> builder = ImmutableList.builder();
-            visitOutputProperties((propertyName, type, root) -> builder.add(root.getAbsolutePath()));
-            context.getTaskProperties().getDestroyableFiles().forEach(file -> builder.add(file.getAbsolutePath()));
-            context.getTaskProperties().getLocalStateFiles().forEach(file -> builder.add(file.getAbsolutePath()));
-            return builder.build();
         }
 
         @Override
@@ -410,47 +398,6 @@ public class ExecuteActionsTaskExecuter implements TaskExecuter {
                 }
             }
             return InputChangeTrackingStrategy.NONE;
-        }
-
-        @Override
-        public ImmutableSortedMap<String, FileSystemSnapshot> snapshotOutputsBeforeExecution() {
-            return snapshotOutputs();
-        }
-
-        @Override
-        public ImmutableSortedMap<String, FileSystemSnapshot> snapshotOutputsAfterExecution() {
-            return snapshotOutputs();
-        }
-
-        private ImmutableSortedMap<String, FileSystemSnapshot> snapshotOutputs() {
-            ImmutableSortedSet<OutputFilePropertySpec> outputFilePropertySpecs = context.getTaskProperties().getOutputFileProperties();
-            return taskSnapshotter.snapshotTaskFiles(task, outputFilePropertySpecs);
-        }
-
-        @Override
-        public ImmutableSortedMap<String, CurrentFileCollectionFingerprint> fingerprintAndFilterOutputSnapshots(
-            ImmutableSortedMap<String, FileCollectionFingerprint> afterPreviousExecutionOutputFingerprints,
-            ImmutableSortedMap<String, FileSystemSnapshot> beforeExecutionOutputSnapshots,
-            ImmutableSortedMap<String, FileSystemSnapshot> afterExecutionOutputSnapshots,
-            boolean hasDetectedOverlappingOutputs
-        ) {
-            return ImmutableSortedMap.copyOfSorted(
-                Maps.transformEntries(afterExecutionOutputSnapshots, (propertyName, afterExecutionOutputSnapshot) -> {
-                        FileCollectionFingerprint afterLastExecutionFingerprint = afterPreviousExecutionOutputFingerprints.get(propertyName);
-                        FileSystemSnapshot beforeExecutionOutputSnapshot = beforeExecutionOutputSnapshots.get(propertyName);
-                        // This can never be null as it comes from an ImmutableMap's value
-                        assert afterExecutionOutputSnapshot != null;
-                        return fingerprintOutputSnapshot(afterLastExecutionFingerprint, beforeExecutionOutputSnapshot, afterExecutionOutputSnapshot, hasDetectedOverlappingOutputs);
-                    }
-                )
-            );
-        }
-
-        private CurrentFileCollectionFingerprint fingerprintOutputSnapshot(@Nullable FileCollectionFingerprint afterLastExecutionFingerprint, FileSystemSnapshot beforeExecutionOutputSnapshot, FileSystemSnapshot afterExecutionOutputSnapshot, boolean hasOverlappingOutputs) {
-            List<FileSystemSnapshot> roots = hasOverlappingOutputs
-                ? OutputFilterUtil.filterOutputSnapshotAfterExecution(afterLastExecutionFingerprint, beforeExecutionOutputSnapshot, afterExecutionOutputSnapshot)
-                : ImmutableList.of(afterExecutionOutputSnapshot);
-            return DefaultCurrentFileCollectionFingerprint.from(roots, AbsolutePathFingerprintingStrategy.IGNORE_MISSING);
         }
 
         @Override

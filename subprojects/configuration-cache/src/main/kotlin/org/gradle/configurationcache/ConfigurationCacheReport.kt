@@ -72,12 +72,12 @@ class ConfigurationCacheReport {
         var dataWritten = false
         htmlReader.forEachLine { line ->
             if (!dataWritten && line.contains("configuration-cache-report-data.js")) {
-                appendln("""<script type="text/javascript">""")
+                appendLine("""<script type="text/javascript">""")
                 writeJsReportData(cacheAction, problems)
-                appendln("</script>")
+                appendLine("</script>")
                 dataWritten = true
             } else {
-                appendln(line)
+                appendLine(line)
             }
         }
         require(dataWritten) { "Didn't write report data, placeholder not found!" }
@@ -91,20 +91,20 @@ class ConfigurationCacheReport {
      */
     private
     fun BufferedWriter.writeJsReportData(cacheAction: String, problems: List<PropertyProblem>) {
-        appendln("function configurationCacheProblems() { return (")
-        appendln("// begin-report-data")
+        appendLine("function configurationCacheProblems() { return (")
+        appendLine("// begin-report-data")
         writeJsonModelFor(cacheAction, problems)
-        appendln("// end-report-data")
-        appendln(");}")
+        appendLine("// end-report-data")
+        appendLine(");}")
     }
 
     private
     fun BufferedWriter.writeJsonModelFor(cacheAction: String, problems: List<PropertyProblem>) {
         val documentationRegistry = DocumentationRegistry()
-        appendln("{") // begin JSON
-        appendln("\"cacheAction\": \"$cacheAction\",")
-        appendln("\"documentationLink\": \"${documentationRegistry.getDocumentationFor("configuration_cache")}\",")
-        appendln("\"problems\": [") // begin problems
+        appendLine("{") // begin JSON
+        appendLine("\"cacheAction\": \"$cacheAction\",")
+        appendLine("\"documentationLink\": \"${documentationRegistry.getDocumentationFor("configuration_cache")}\",")
+        appendLine("\"problems\": [") // begin problems
         problems.forEachIndexed { index, problem ->
             if (index > 0) append(',')
             append(
@@ -118,8 +118,8 @@ class ConfigurationCacheReport {
                 )
             )
         }
-        appendln("]") // end problems
-        appendln("}") // end JSON
+        appendLine("]") // end problems
+        appendLine("}") // end JSON
     }
 
     private

@@ -30,7 +30,7 @@ import elmish.tree.Tree
 import elmish.tree.TreeView
 import elmish.tree.viewSubTrees
 
-import kotlin.browser.window
+import kotlinx.browser.window
 
 
 internal
@@ -309,7 +309,8 @@ object ConfigurationCacheReportPage : Component<ConfigurationCacheReportPage.Mod
             emptyList()
         } else {
             listOf(viewNode(docLink))
-        })
+        }
+    )
 
     private
     fun treeButtonFor(child: Tree.Focus<ProblemNode>, treeIntent: (ProblemTreeIntent) -> Intent): View<Intent> =

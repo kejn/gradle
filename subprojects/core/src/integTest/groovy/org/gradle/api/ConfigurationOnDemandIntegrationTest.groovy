@@ -72,18 +72,14 @@ class ConfigurationOnDemandIntegrationTest extends AbstractIntegrationSpec {
     }
 
     def "evaluates only project referenced in the task list"() {
-        // The util project's classloaders will be created eagerly because util:impl
-        // will be evaluated before it
-        executer.withEagerClassLoaderCreationCheckDisabled()
-
         settingsFile << "include 'api', 'impl', 'util', 'util:impl'"
         buildFile << "allprojects { task foo }"
 
         when:
-        run(":foo", ":util:impl:foo")
+        run(":util:impl:foo")
 
         then:
-        fixture.assertProjectsConfigured(":", ":util:impl")
+        fixture.assertProjectsConfigured(":", ":util", ":util:impl")
     }
 
     def "does not show configuration on demand incubating message in a regular mode"() {
@@ -515,5 +511,24 @@ allprojects {
         then:
         result.assertTasksExecuted(":a:one")
         fixture.assertProjectsConfigured(":", ":b", ":b:child", ":a")
+    }
+
+    def "extra properties defined in parent project are accessible to child"() {
+        settingsFile << "include 'a', 'a:child'"
+        file('a/build.gradle') << """
+ext.foo = "Moo!!!"
+"""
+        file('a/child/build.gradle') << """
+task printExt {
+    doLast {
+        println "The Foo says " + foo
+    }
+}
+"""
+        when:
+        run(":a:child:printExt")
+
+        then:
+        outputContains("The Foo says Moo!!!")
     }
 }

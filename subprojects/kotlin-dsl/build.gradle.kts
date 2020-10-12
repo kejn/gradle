@@ -23,8 +23,13 @@ plugins {
 description = "Kotlin DSL Provider"
 
 dependencies {
+
+    compileOnlyApi(libs.futureKotlin("compiler-embeddable"))
+    compileOnlyApi(libs.futureKotlin("reflect"))
+
+    runtimeOnly(project(":kotlin-compiler-embeddable"))
+
     api(project(":kotlin-dsl-tooling-models"))
-    api(project(":kotlin-compiler-embeddable"))
     api(libs.futureKotlin("stdlib-jdk8"))
 
     implementation(project(":base-services"))
@@ -43,11 +48,16 @@ dependencies {
     implementation(project(":build-cache"))
     implementation(project(":tooling-api"))
     implementation(project(":execution"))
+    implementation(project(":normalization-java"))
 
     implementation(libs.groovy)
     implementation(libs.slf4jApi)
     implementation(libs.guava)
     implementation(libs.inject)
+    implementation(libs.asm)
+
+    implementation(libs.futureKotlin("script-runtime"))
+    implementation(libs.futureKotlin("daemon-embeddable"))
 
     implementation(libs.futureKotlin("scripting-common")) {
         isTransitive = false
@@ -55,7 +65,7 @@ dependencies {
     implementation(libs.futureKotlin("scripting-jvm")) {
         isTransitive = false
     }
-    implementation(libs.futureKotlin("scripting-jvm-host-embeddable")) {
+    implementation(libs.futureKotlin("scripting-jvm-host")) {
         isTransitive = false
     }
     implementation(libs.futureKotlin("scripting-compiler-embeddable")) {
@@ -80,7 +90,6 @@ dependencies {
     testImplementation(project(":plugins"))
     testImplementation(project(":version-control"))
     testImplementation(libs.ant)
-    testImplementation(libs.asm)
     testImplementation(libs.mockitoKotlin)
     testImplementation(libs.jacksonKotlin)
 

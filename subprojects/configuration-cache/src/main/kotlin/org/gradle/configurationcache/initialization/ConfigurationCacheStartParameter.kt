@@ -18,9 +18,9 @@ package org.gradle.configurationcache.initialization
 
 import org.gradle.StartParameter
 import org.gradle.api.internal.StartParameterInternal
+import org.gradle.configurationcache.extensions.unsafeLazy
 import org.gradle.initialization.StartParameterBuildOptions.ConfigurationCacheProblemsOption
 import org.gradle.initialization.layout.BuildLayout
-import org.gradle.configurationcache.extensions.unsafeLazy
 import org.gradle.internal.service.scopes.Scopes
 import org.gradle.internal.service.scopes.ServiceScope
 import java.io.File
@@ -62,6 +62,9 @@ class ConfigurationCacheStartParameter(
     val settingsDirectory: File
         get() = buildLayout.settingsDir
 
+    val settingsFile: File?
+        get() = startParameter.settingsFile
+
     val rootDirectory: File
         get() = buildLayout.rootDirectory
 
@@ -86,4 +89,7 @@ class ConfigurationCacheStartParameter(
 
     val gradleUserHomeDir: File
         get() = startParameter.gradleUserHomeDir
+
+    val includedBuilds: List<File>
+        get() = startParameter.includedBuilds
 }

@@ -16,13 +16,14 @@
 
 package org.gradle.internal.execution.steps;
 
-import org.gradle.internal.execution.Context;
+import com.google.common.collect.ImmutableList;
 import org.gradle.internal.execution.OutputChangeListener;
 import org.gradle.internal.execution.Result;
 import org.gradle.internal.execution.Step;
 import org.gradle.internal.execution.UnitOfWork;
+import org.gradle.internal.execution.WorkspaceContext;
 
-public class BroadcastChangingOutputsStep<C extends Context, R extends Result> implements Step<C, R> {
+public class BroadcastChangingOutputsStep<C extends WorkspaceContext, R extends Result> implements Step<C, R> {
 
     private final OutputChangeListener outputChangeListener;
     private final Step<? super C, ? extends R> delegate;
@@ -38,7 +39,11 @@ public class BroadcastChangingOutputsStep<C extends Context, R extends Result> i
     @Override
     public R execute(C context) {
         UnitOfWork work = context.getWork();
-        outputChangeListener.beforeOutputChange(work.getChangingOutputs());
+        ImmutableList.Builder<String> builder = ImmutableList.builder();
+        work.visitOutputProperties(context.getWorkspace(), (propertyName, type, root, contents) -> builder.add(root.getAbsolutePath()));
+        work.visitDestroyableRoots(file -> builder.add(file.getAbsolutePath()));
+        work.visitLocalState(file -> builder.add(file.getAbsolutePath()));
+        outputChangeListener.beforeOutputChange(builder.build());
         return delegate.execute(context);
     }
 }

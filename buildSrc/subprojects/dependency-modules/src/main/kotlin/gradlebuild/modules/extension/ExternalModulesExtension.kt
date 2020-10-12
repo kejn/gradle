@@ -21,7 +21,7 @@ import gradlebuild.modules.model.License
 abstract class ExternalModulesExtension {
 
     val groovyVersion = "2.5.12"
-    val kotlinVersion = "1.3.72"
+    val kotlinVersion = "1.4.10"
 
     fun futureKotlin(module: String) = "org.jetbrains.kotlin:kotlin-$module:$kotlinVersion"
 
@@ -136,6 +136,7 @@ abstract class ExternalModulesExtension {
     val guice = "com.google.inject:guice"
     val httpmime = "org.apache.httpcomponents:httpmime"
     val jacksonKotlin = "com.fasterxml.jackson.module:jackson-module-kotlin"
+    val javaParser = "com.github.javaparser:javaparser-core"
     val joptSimple = "net.sf.jopt-simple:jopt-simple"
     val jetty = "org.eclipse.jetty:jetty-http"
     val jettySecurity = "org.eclipse.jetty:jetty-security"
@@ -148,6 +149,7 @@ abstract class ExternalModulesExtension {
     val mina = "org.apache.mina:mina-core"
     val mockitoKotlin = "com.nhaarman:mockito-kotlin"
     val mockitoKotlin2 = "com.nhaarman.mockitokotlin2:mockito-kotlin"
+    val mySqlConnector = "mysql:mysql-connector-java"
     val sampleCheck = "org.gradle:sample-check"
     val snappy = "org.iq80.snappy:snappy"
     val servletApi = "javax.servlet:javax.servlet-api"

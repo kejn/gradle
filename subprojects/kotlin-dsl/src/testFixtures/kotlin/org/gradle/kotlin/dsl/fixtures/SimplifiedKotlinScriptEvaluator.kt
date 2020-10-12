@@ -131,7 +131,7 @@ class SimplifiedKotlinScriptEvaluator(
             scriptHost: KotlinScriptHost<*>,
             templateId: String,
             sourceHash: HashCode,
-            parentClassLoader: ClassLoader,
+            compilationClassPathHash: HashCode,
             accessorsClassPath: ClassPath?,
             initializer: (File) -> Unit
         ): File = baseCacheDir.resolve(sourceHash.toString()).resolve(templateId).also { cacheDir ->
@@ -152,7 +152,8 @@ class SimplifiedKotlinScriptEvaluator(
             DummyCompiledScript(
                 classLoaderFor(scriptRuntimeClassPath + DefaultClassPath.of(location))
                     .also { classLoaders += it }
-                    .loadClass(className))
+                    .loadClass(className)
+            )
 
         override fun applyPluginsTo(scriptHost: KotlinScriptHost<*>, pluginRequests: PluginRequests) = Unit
 

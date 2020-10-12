@@ -235,7 +235,7 @@ data class KotlinDslScriptsParameter(
 
 internal
 fun <T : Any> commonPrefixOf(lists: List<List<T>>): List<T> =
-    lists.minBy { it.size }?.let { maxCommonPrefix ->
+    lists.minByOrNull { it.size }?.let { maxCommonPrefix ->
         maxCommonPrefix.indices.asSequence().takeWhile { index ->
             lists.all { list -> list[index] == maxCommonPrefix[index] }
         }.lastOrNull()?.let { maxCommonIndex ->

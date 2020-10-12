@@ -19,18 +19,19 @@ package org.gradle.performance.regression.android
 import org.gradle.performance.AbstractCrossVersionPerformanceTest
 import org.gradle.performance.android.GetModel
 import org.gradle.performance.android.SyncAction
+import org.gradle.performance.fixture.AndroidTestProject
 
 class RealLifeAndroidStudioMockupPerformanceTest extends AbstractCrossVersionPerformanceTest {
 
     def "get IDE model for Android Studio"() {
         given:
-        def testProject = AndroidTestProject.getAndroidTestProject(runner.testProject)
+        def testProject = AndroidTestProject.projectFor(runner.testProject)
         testProject.configure(runner)
         int iterations = (testProject == AndroidTestProject.K9_ANDROID) ? 200 : 40
         runner.warmUpRuns = iterations
         runner.runs = iterations
         runner.minimumBaseVersion = "5.4.1"
-        runner.targetVersions = ["6.7-20200824220048+0000"]
+        runner.targetVersions = ["6.8-20201005220043+0000"]
 
         runner.toolingApi("Android Studio Sync") {
             it.action(new GetModel())

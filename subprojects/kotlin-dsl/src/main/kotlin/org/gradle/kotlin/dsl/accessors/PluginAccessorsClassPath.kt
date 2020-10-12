@@ -16,8 +16,6 @@
 
 package org.gradle.kotlin.dsl.accessors
 
-import com.google.common.collect.ImmutableList
-import com.google.common.collect.ImmutableSortedMap
 import kotlinx.metadata.Flag
 import kotlinx.metadata.KmTypeVisitor
 import kotlinx.metadata.flagsOf
@@ -26,25 +24,19 @@ import org.gradle.api.Project
 import org.gradle.api.internal.file.FileCollectionFactory
 import org.gradle.api.internal.initialization.ClassLoaderScope
 import org.gradle.api.internal.project.ProjectInternal
-import org.gradle.caching.internal.CacheableEntity
 import org.gradle.internal.classpath.ClassPath
 import org.gradle.internal.classpath.DefaultClassPath
-import org.gradle.internal.execution.CachingResult
-import org.gradle.internal.execution.ExecutionRequestContext
 import org.gradle.internal.execution.InputChangesContext
 import org.gradle.internal.execution.UnitOfWork
+import org.gradle.internal.execution.UnitOfWork.IdentityKind.IDENTITY
 import org.gradle.internal.execution.WorkExecutor
 import org.gradle.internal.execution.history.ExecutionHistoryStore
 import org.gradle.internal.execution.history.changes.InputChangesInternal
-import org.gradle.internal.file.TreeType
+import org.gradle.internal.file.TreeType.DIRECTORY
 import org.gradle.internal.fingerprint.CurrentFileCollectionFingerprint
-import org.gradle.internal.fingerprint.FileCollectionFingerprint
-import org.gradle.internal.fingerprint.FileCollectionSnapshotter
-import org.gradle.internal.fingerprint.impl.OutputFileCollectionFingerprinter
 import org.gradle.internal.hash.ClassLoaderHierarchyHasher
 import org.gradle.internal.hash.HashCode
-import org.gradle.internal.snapshot.CompositeFileSystemSnapshot
-import org.gradle.internal.snapshot.FileSystemSnapshot
+import org.gradle.internal.snapshot.ValueSnapshot
 import org.gradle.kotlin.dsl.cache.KotlinDslWorkspaceProvider
 import org.gradle.kotlin.dsl.codegen.fileHeader
 import org.gradle.kotlin.dsl.codegen.fileHeaderFor
@@ -99,9 +91,7 @@ import javax.inject.Inject
 class PluginAccessorClassPathGenerator @Inject constructor(
     private val classLoaderHierarchyHasher: ClassLoaderHierarchyHasher,
     private val fileCollectionFactory: FileCollectionFactory,
-    private val fileCollectionSnapshotter: FileCollectionSnapshotter,
-    private val outputFileCollectionFingerprinter: OutputFileCollectionFingerprinter,
-    private val workExecutor: WorkExecutor<ExecutionRequestContext, CachingResult>,
+    private val workExecutor: WorkExecutor,
     private val workspaceProvider: KotlinDslWorkspaceProvider
 ) {
     fun pluginSpecBuildersClassPath(project: Project): AccessorsClassPath = project.rootProject.let { rootProject ->
@@ -109,29 +99,16 @@ class PluginAccessorClassPathGenerator @Inject constructor(
         rootProject.getOrCreateProperty("gradleKotlinDsl.pluginAccessorsClassPath") {
             val buildSrcClassLoaderScope = baseClassLoaderScopeOf(rootProject)
             val classLoaderHash = requireNotNull(classLoaderHierarchyHasher.getClassLoaderHash(buildSrcClassLoaderScope.exportClassLoader))
-            workspaceProvider.withWorkspace("$accessorsWorkspacePrefix/$classLoaderHash") { workspace, executionHistoryStore ->
-                val sourcesOutputDir = File(workspace, "sources")
-                val classesOutputDir = File(workspace, "classes")
-                val work = GeneratePluginAccessors(
-                    rootProject,
-                    buildSrcClassLoaderScope,
-                    classLoaderHash,
-                    sourcesOutputDir,
-                    classesOutputDir,
-                    executionHistoryStore,
-                    fileCollectionFactory,
-                    fileCollectionSnapshotter,
-                    outputFileCollectionFingerprinter
-                )
-                workExecutor.execute(object : ExecutionRequestContext {
-                    override fun getWork() = work
-                    override fun getRebuildReason() = Optional.empty<String>()
-                })
-                AccessorsClassPath(
-                    DefaultClassPath.of(classesOutputDir),
-                    DefaultClassPath.of(sourcesOutputDir)
-                )
-            }
+            val work = GeneratePluginAccessors(
+                rootProject,
+                buildSrcClassLoaderScope,
+                classLoaderHash,
+                workspaceProvider.history,
+                fileCollectionFactory,
+                workspaceProvider
+            )
+            val result = workExecutor.execute(work, null)
+            result.executionResult.get().output as AccessorsClassPath
         }
     }
 }
@@ -141,12 +118,9 @@ class GeneratePluginAccessors(
     private val rootProject: Project,
     private val buildSrcClassLoaderScope: ClassLoaderScope,
     private val classLoaderHash: HashCode,
-    private val sourcesOutputDir: File,
-    private val classesOutputDir: File,
     private val executionHistoryStore: ExecutionHistoryStore,
     private val fileCollectionFactory: FileCollectionFactory,
-    private val fileCollectionSnapshotter: FileCollectionSnapshotter,
-    private val outputFingerprinter: OutputFileCollectionFingerprinter
+    private val workspaceProvider: KotlinDslWorkspaceProvider
 ) : UnitOfWork {
 
     companion object {
@@ -155,74 +129,66 @@ class GeneratePluginAccessors(
         const val CLASSES_OUTPUT_PROPERTY = "classes"
     }
 
-    override fun execute(inputChanges: InputChangesInternal?, context: InputChangesContext): UnitOfWork.WorkResult {
+    override fun execute(inputChanges: InputChangesInternal?, context: InputChangesContext): UnitOfWork.WorkOutput {
         kotlinScriptClassPathProviderOf(rootProject).run {
             withAsynchronousIO(rootProject) {
                 buildPluginAccessorsFor(
                     pluginDescriptorsClassPath = exportClassPathFromHierarchyOf(buildSrcClassLoaderScope),
-                    srcDir = sourcesOutputDir,
-                    binDir = classesOutputDir
+                    srcDir = getSourcesOutputDir(context.workspace),
+                    binDir = getClassesOutputDir(context.workspace)
                 )
             }
         }
-        return UnitOfWork.WorkResult.DID_WORK
+        return object : UnitOfWork.WorkOutput {
+            override fun getDidWork() = UnitOfWork.WorkResult.DID_WORK
+
+            override fun getOutput() = loadRestoredOutput(context.workspace)
+        }
     }
 
-    override fun getIdentity(): String = classLoaderHash.toString()
+    override fun loadRestoredOutput(workspace: File) = AccessorsClassPath(
+        DefaultClassPath.of(getClassesOutputDir(workspace)),
+        DefaultClassPath.of(getSourcesOutputDir(workspace))
+    )
+
+    override fun identify(identityInputs: MutableMap<String, ValueSnapshot>, identityFileInputs: MutableMap<String, CurrentFileCollectionFingerprint>) = UnitOfWork.Identity { classLoaderHash.toString() }
+
+    override fun getHistory(): Optional<ExecutionHistoryStore> = Optional.of(executionHistoryStore)
+
+    override fun <T : Any> withWorkspace(identity: String, action: UnitOfWork.WorkspaceAction<T>): T =
+        workspaceProvider.withWorkspace("$accessorsWorkspacePrefix/$identity") { workspace, _ ->
+            action.executeInWorkspace(workspace)
+        }
 
     override fun getDisplayName(): String = "Kotlin DSL plugin accessors for classpath '$classLoaderHash'"
 
     override fun markExecutionTime(): Long = 0
-
-    override fun getExecutionHistoryStore(): Optional<ExecutionHistoryStore> = Optional.of(executionHistoryStore)
-
-    override fun validate(validationContext: UnitOfWork.WorkValidationContext) = Unit
-
-    override fun getChangingOutputs(): Iterable<String> =
-        listOf(sourcesOutputDir.absolutePath, classesOutputDir.absolutePath)
-
-    override fun fingerprintAndFilterOutputSnapshots(
-        afterPreviousExecutionOutputFingerprints: ImmutableSortedMap<String, FileCollectionFingerprint>,
-        beforeExecutionOutputSnapshots: ImmutableSortedMap<String, FileSystemSnapshot>,
-        afterExecutionOutputSnapshots: ImmutableSortedMap<String, FileSystemSnapshot>,
-        hasDetectedOverlappingOutputs: Boolean
-    ): ImmutableSortedMap<String, CurrentFileCollectionFingerprint> = ImmutableSortedMap.copyOf(
-        afterExecutionOutputSnapshots.mapValues { (_, value) -> outputFingerprinter.fingerprint(ImmutableList.of(value)) }
-    )
-
-    override fun snapshotOutputsBeforeExecution(): ImmutableSortedMap<String, FileSystemSnapshot> = snapshotOutputs()
-
-    override fun snapshotOutputsAfterExecution(): ImmutableSortedMap<String, FileSystemSnapshot> = snapshotOutputs()
-
-    private
-    fun snapshotOutputs(): ImmutableSortedMap<String, FileSystemSnapshot> {
-        val sourceSnapshots: List<FileSystemSnapshot> = fileCollectionSnapshotter.snapshot(fileCollectionFactory.fixed(sourcesOutputDir))
-        val classesSnapshots: List<FileSystemSnapshot> = fileCollectionSnapshotter.snapshot(fileCollectionFactory.fixed(classesOutputDir))
-        return ImmutableSortedMap.of(
-            SOURCES_OUTPUT_PROPERTY, CompositeFileSystemSnapshot.of(sourceSnapshots),
-            CLASSES_OUTPUT_PROPERTY, CompositeFileSystemSnapshot.of(classesSnapshots))
-    }
 
     override fun visitImplementations(visitor: UnitOfWork.ImplementationVisitor) {
         visitor.visitImplementation(GeneratePluginAccessors::class.java)
     }
 
     override fun visitInputProperties(visitor: UnitOfWork.InputPropertyVisitor) {
-        visitor.visitInputProperty(BUILD_SRC_CLASSLOADER_INPUT_PROPERTY, classLoaderHash)
+        visitor.visitInputProperty(BUILD_SRC_CLASSLOADER_INPUT_PROPERTY, IDENTITY) { classLoaderHash }
     }
 
     override fun visitInputFileProperties(visitor: UnitOfWork.InputFilePropertyVisitor) = Unit
 
-    override fun visitOutputProperties(visitor: UnitOfWork.OutputPropertyVisitor) {
-        visitor.visitOutputProperty(SOURCES_OUTPUT_PROPERTY, TreeType.DIRECTORY, sourcesOutputDir)
-        visitor.visitOutputProperty(CLASSES_OUTPUT_PROPERTY, TreeType.DIRECTORY, classesOutputDir)
-    }
-
-    override fun visitOutputTrees(visitor: CacheableEntity.CacheableTreeVisitor) {
-        visitor.visitOutputTree(SOURCES_OUTPUT_PROPERTY, TreeType.DIRECTORY, sourcesOutputDir)
-        visitor.visitOutputTree(CLASSES_OUTPUT_PROPERTY, TreeType.DIRECTORY, classesOutputDir)
+    override fun visitOutputProperties(workspace: File, visitor: UnitOfWork.OutputPropertyVisitor) {
+        val sourcesOutputDir = getSourcesOutputDir(workspace)
+        val classesOutputDir = getClassesOutputDir(workspace)
+        visitor.visitOutputProperty(SOURCES_OUTPUT_PROPERTY, DIRECTORY, sourcesOutputDir, fileCollectionFactory.fixed(sourcesOutputDir))
+        visitor.visitOutputProperty(CLASSES_OUTPUT_PROPERTY, DIRECTORY, classesOutputDir, fileCollectionFactory.fixed(classesOutputDir))
     }
 }
+
+
+private
+fun getClassesOutputDir(workspace: File) = File(workspace, "classes")
+
+
+private
+fun getSourcesOutputDir(workspace: File): File = File(workspace, "sources")
 
 
 fun writeSourceCodeForPluginSpecBuildersFor(
@@ -355,10 +321,12 @@ fun BufferedWriter.appendSourceCodeForPluginAccessors(
     format: AccessorFormat
 ) {
 
-    appendReproducibleNewLine("""
+    appendReproducibleNewLine(
+        """
         import ${PluginDependenciesSpec::class.qualifiedName}
         import ${PluginDependencySpec::class.qualifiedName}
-    """.replaceIndent())
+        """.replaceIndent()
+    )
 
     defaultPackageTypesIn(accessors).forEach {
         appendReproducibleNewLine("import $it")
@@ -371,30 +339,38 @@ fun BufferedWriter.appendSourceCodeForPluginAccessors(
         val pluginsRef = pluginDependenciesSpecOf(extendedType)
         when (this) {
             is PluginAccessor.ForPlugin -> {
-                appendReproducibleNewLine(format("""
-                    /**
-                     * The `$id` plugin implemented by [$implementationClass].
-                     */
-                    val `$extendedType`.`${extension.name}`: PluginDependencySpec
-                        get() = $pluginsRef.id("$id")
-                """))
+                appendReproducibleNewLine(
+                    format(
+                        """
+                        /**
+                         * The `$id` plugin implemented by [$implementationClass].
+                         */
+                        val `$extendedType`.`${extension.name}`: PluginDependencySpec
+                            get() = $pluginsRef.id("$id")
+                        """
+                    )
+                )
             }
             is PluginAccessor.ForGroup -> {
                 val groupType = extension.returnType.sourceName
-                appendReproducibleNewLine(format("""
-                    /**
-                     * The `$id` plugin group.
-                     */
-                    @org.gradle.api.Generated
-                    class `$groupType`(internal val plugins: PluginDependenciesSpec)
+                appendReproducibleNewLine(
+                    format(
+                        """
+                        /**
+                         * The `$id` plugin group.
+                         */
+                        @org.gradle.api.Generated
+                        class `$groupType`(internal val plugins: PluginDependenciesSpec)
 
 
-                    /**
-                     * Plugin ids starting with `$id`.
-                     */
-                    val `$extendedType`.`${extension.name}`: `$groupType`
-                        get() = `$groupType`($pluginsRef)
-                """))
+                        /**
+                         * Plugin ids starting with `$id`.
+                         */
+                        val `$extendedType`.`${extension.name}`: `$groupType`
+                            get() = `$groupType`($pluginsRef)
+                        """
+                    )
+                )
             }
         }
     }

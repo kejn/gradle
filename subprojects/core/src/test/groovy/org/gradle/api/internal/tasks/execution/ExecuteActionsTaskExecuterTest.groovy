@@ -39,16 +39,20 @@ import org.gradle.initialization.DefaultBuildCancellationToken
 import org.gradle.internal.event.ListenerManager
 import org.gradle.internal.exceptions.DefaultMultiCauseException
 import org.gradle.internal.exceptions.MultiCauseException
+import org.gradle.internal.execution.DefaultOutputSnapshotter
 import org.gradle.internal.execution.OutputChangeListener
 import org.gradle.internal.execution.history.AfterPreviousExecutionState
 import org.gradle.internal.execution.history.ExecutionHistoryStore
 import org.gradle.internal.execution.history.changes.DefaultExecutionStateChangeDetector
 import org.gradle.internal.execution.impl.DefaultWorkExecutor
+import org.gradle.internal.execution.steps.AssignWorkspaceStep
 import org.gradle.internal.execution.steps.BroadcastChangingOutputsStep
 import org.gradle.internal.execution.steps.CancelExecutionStep
 import org.gradle.internal.execution.steps.CaptureStateBeforeExecutionStep
 import org.gradle.internal.execution.steps.CleanupOutputsStep
 import org.gradle.internal.execution.steps.ExecuteStep
+import org.gradle.internal.execution.steps.IdentifyStep
+import org.gradle.internal.execution.steps.IdentityCacheStep
 import org.gradle.internal.execution.steps.LoadExecutionStateStep
 import org.gradle.internal.execution.steps.ResolveCachingStateStep
 import org.gradle.internal.execution.steps.ResolveChangesStep
@@ -112,12 +116,10 @@ class ExecuteActionsTaskExecuterTest extends Specification {
 
     def fileSystemAccess = TestFiles.fileSystemAccess()
     def fileCollectionSnapshotter = new DefaultFileCollectionSnapshotter(fileSystemAccess, TestFiles.genericFileTreeSnapshotter(), TestFiles.fileSystem())
+    def outputSnapshotter = new DefaultOutputSnapshotter(fileCollectionSnapshotter)
     def fingerprinter = new AbsolutePathFileCollectionFingerprinter(fileCollectionSnapshotter)
     def fingerprinterRegistry = Stub(FileCollectionFingerprinterRegistry) {
         getFingerprinter(_) >> fingerprinter
-    }
-    def taskSnapshotter = Stub(TaskSnapshotter) {
-        snapshotTaskFiles(task, _) >> ImmutableSortedMap.of()
     }
     def executionHistoryStore = Mock(ExecutionHistoryStore)
     def buildId = UniqueId.generate()
@@ -145,27 +147,29 @@ class ExecuteActionsTaskExecuterTest extends Specification {
     def validationWarningReporter = Stub(ValidateStep.ValidationWarningReporter)
 
     // @formatter:off
-    def workExecutor = new DefaultWorkExecutor<>(
+    def workExecutor = new DefaultWorkExecutor(
+        new IdentifyStep<>(valueSnapshotter,
+        new IdentityCacheStep<>(
+        new AssignWorkspaceStep<>(
         new LoadExecutionStateStep<>(
         new SkipEmptyWorkStep<>(
         new ValidateStep<>(validationWarningReporter,
-        new CaptureStateBeforeExecutionStep(buildOperationExecutor, classloaderHierarchyHasher, valueSnapshotter, overlappingOutputDetector,
+        new CaptureStateBeforeExecutionStep(buildOperationExecutor, classloaderHierarchyHasher, outputSnapshotter, overlappingOutputDetector, valueSnapshotter,
         new ResolveCachingStateStep(buildCacheController, false,
         new ResolveChangesStep<>(changeDetector,
         new SkipUpToDateStep<>(
         new BroadcastChangingOutputsStep<>(outputChangeListener,
-        new SnapshotOutputsStep<>(buildOperationExecutor, buildId,
+        new SnapshotOutputsStep<>(buildOperationExecutor, buildId, outputSnapshotter,
         new CancelExecutionStep<>(cancellationToken,
         new ResolveInputChangesStep<>(
         new CleanupOutputsStep<>(deleter, outputChangeListener,
-        new ExecuteStep<>(
-    ))))))))))))))
+        new ExecuteStep<>(buildOperationExecutor
+    )))))))))))))))))
     // @formatter:on
 
     def executer = new ExecuteActionsTaskExecuter(
         ExecuteActionsTaskExecuter.BuildCacheState.DISABLED,
         ExecuteActionsTaskExecuter.ScanPluginState.NOT_APPLIED,
-        taskSnapshotter,
         executionHistoryStore,
         buildOperationExecutorForTaskExecution,
         asyncWorkTracker,

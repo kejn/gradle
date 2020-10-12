@@ -16,6 +16,7 @@
 
 package Gradle_Check.configurations
 
+import Gradle_Check.model.PerformanceTestCoverage
 import common.Os
 import common.applyDefaultSettings
 import configurations.BaseGradleBuildType
@@ -23,6 +24,7 @@ import configurations.gradleRunnerStep
 import configurations.publishBuildStatusToGithub
 import configurations.snapshotDependencies
 import jetbrains.buildServer.configs.kotlin.v2019_2.AbsoluteId
+import jetbrains.buildServer.configs.kotlin.v2019_2.ReuseBuilds
 import model.CIBuildModel
 import model.PerformanceTestType
 import projects.PerformanceTestProject
@@ -30,10 +32,11 @@ import projects.PerformanceTestProject
 class PerformanceTestsPass(model: CIBuildModel, performanceTestProject: PerformanceTestProject) : BaseGradleBuildType(model, init = {
     uuid = performanceTestProject.uuid + "_Trigger"
     id = AbsoluteId(uuid)
+    val performanceTestCoverage = performanceTestProject.performanceTestCoverage
     name = performanceTestProject.name + " (Trigger)"
 
     val os = Os.LINUX
-    val type = performanceTestProject.performanceTestCoverage.type
+    val type = performanceTestCoverage.type
 
     applyDefaultSettings(os)
     params {
@@ -41,7 +44,7 @@ class PerformanceTestsPass(model: CIBuildModel, performanceTestProject: Performa
         param("env.JAVA_HOME", os.buildJavaHome())
         param("env.BUILD_BRANCH", "%teamcity.build.branch%")
         param("performance.db.username", "tcagent")
-        param("performance.channel", performanceTestProject.performanceTestCoverage.channel())
+        param("performance.channel", performanceTestCoverage.channel())
     }
 
     features {
@@ -51,14 +54,13 @@ class PerformanceTestsPass(model: CIBuildModel, performanceTestProject: Performa
     val performanceResultsDir = "perf-results"
     val performanceProjectName = "performance"
 
-    val taskName = if (performanceTestProject.performanceTestCoverage.type == PerformanceTestType.flakinessDetection)
+    val taskName = if (performanceTestCoverage.type == PerformanceTestType.flakinessDetection)
         "performanceTestFlakinessReport"
     else
         "performanceTestReport"
 
     artifactRules = """
-$performanceResultsDir => perf-results/
-subprojects/$performanceProjectName/build/$taskName => report/
+subprojects/$performanceProjectName/build/performance-test-results.zip
 """
 
     gradleRunnerStep(
@@ -73,15 +75,31 @@ subprojects/$performanceProjectName/build/$taskName => report/
     )
 
     dependencies {
-        snapshotDependencies(performanceTestProject.performanceTests)
-        performanceTestProject.performanceTests.forEach {
-            if (it.testProjects.isNotEmpty()) {
-                artifacts(it.id!!) {
-                    id = "ARTIFACT_DEPENDENCY_${it.id!!}"
+        snapshotDependencies(performanceTestProject.performanceTests) {
+            if (type == PerformanceTestType.flakinessDetection) {
+                reuseBuilds = ReuseBuilds.NO
+            }
+        }
+        performanceTestProject.performanceTests.forEachIndexed { index, performanceTest ->
+            if (performanceTest.testProjects.isNotEmpty()) {
+                artifacts(performanceTest.id!!) {
+                    id = "ARTIFACT_DEPENDENCY_${performanceTest.id!!}"
                     cleanDestination = true
-                    artifactRules = "results/performance/build/test-results-*.zip!performance-tests/perf-results*.json => $performanceResultsDir/${it.bucketIndex}/"
+                    val perfResultArtifactRule = """results/performance/build/test-results-*.zip!performance-tests/perf-results*.json => $performanceResultsDir/${performanceTest.bucketIndex}/"""
+                    artifactRules = if (index == 0) {
+                        // The artifact rule report/css/*.css => performanceResultsDir is there to clean up the target directory.
+                        // If we don't clean that up there might be leftover json files from other report builds running on the same machine.
+                        """
+                            results/performance/build/test-results-*.zip!performance-tests/report/css/*.css => $performanceResultsDir/
+                            $perfResultArtifactRule
+                        """.trimIndent()
+                    } else {
+                        perfResultArtifactRule
+                    }
                 }
             }
         }
     }
-})
+}) {
+    val performanceTestCoverage: PerformanceTestCoverage = performanceTestProject.performanceTestCoverage
+}

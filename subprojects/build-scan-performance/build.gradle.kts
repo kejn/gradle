@@ -1,5 +1,5 @@
-import gradlebuild.performance.tasks.PerformanceTest
 import gradlebuild.performance.generator.tasks.JvmProjectGeneratorTask
+import gradlebuild.performance.tasks.PerformanceTest
 
 /*
  * Copyright 2016 the original author or authors.
@@ -33,7 +33,7 @@ dependencies {
     }
 }
 
-val generateTemplate = tasks.register<JvmProjectGeneratorTask>("javaProject") {
+performanceTest.registerTestProject<JvmProjectGeneratorTask>("javaProject") {
     dependencyGraph.run {
         size = 200
         depth = 5
@@ -56,12 +56,23 @@ val generateTemplate = tasks.register<JvmProjectGeneratorTask>("javaProject") {
         "manyPlugins" to true,
         "manyScripts" to true
     )
+    doLast {
+        File(destDir, "build.gradle").appendText("""
+// gradle-profiler doesn't support expectFailure
+subprojects {
+    afterEvaluate {
+        test.ignoreFailures = true
+    }
+}
+""")
+    }
 }
 
 tasks.withType<PerformanceTest>().configureEach {
-    dependsOn(generateTemplate)
     systemProperties["incomingArtifactDir"] = "$rootDir/incoming/"
 
     environment("ARTIFACTORY_USERNAME", System.getenv("ARTIFACTORY_USERNAME"))
     environment("ARTIFACTORY_PASSWORD", System.getenv("ARTIFACTORY_PASSWORD"))
+
+    reportGeneratorClass.set("org.gradle.performance.results.BuildScanReportGenerator")
 }

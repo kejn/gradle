@@ -17,6 +17,7 @@
 package org.gradle.internal.execution.steps;
 
 import com.google.common.collect.ImmutableBiMap;
+import com.google.common.collect.ImmutableSortedMap;
 import org.gradle.api.InvalidUserDataException;
 import org.gradle.internal.execution.CachingContext;
 import org.gradle.internal.execution.IncrementalChangesContext;
@@ -31,12 +32,16 @@ import org.gradle.internal.execution.history.changes.ExecutionStateChangeDetecto
 import org.gradle.internal.execution.history.changes.ExecutionStateChanges;
 import org.gradle.internal.execution.history.changes.IncrementalInputProperties;
 import org.gradle.internal.execution.history.changes.RebuildExecutionStateChanges;
+import org.gradle.internal.fingerprint.CurrentFileCollectionFingerprint;
+import org.gradle.internal.snapshot.ValueSnapshot;
 
+import java.io.File;
 import java.util.Optional;
 
 public class ResolveChangesStep<R extends Result> implements Step<CachingContext, R> {
-    private final ExecutionStateChangeDetector changeDetector;
     private static final String NO_HISTORY = "No history is available.";
+
+    private final ExecutionStateChangeDetector changeDetector;
 
     private final Step<? super IncrementalChangesContext, R> delegate;
 
@@ -90,6 +95,26 @@ public class ResolveChangesStep<R extends Result> implements Step<CachingContext
             }
 
             @Override
+            public ImmutableSortedMap<String, ValueSnapshot> getInputProperties() {
+                return context.getInputProperties();
+            }
+
+            @Override
+            public ImmutableSortedMap<String, CurrentFileCollectionFingerprint> getInputFileProperties() {
+                return context.getInputFileProperties();
+            }
+
+            @Override
+            public UnitOfWork.Identity getIdentity() {
+                return context.getIdentity();
+            }
+
+            @Override
+            public File getWorkspace() {
+                return context.getWorkspace();
+            }
+
+            @Override
             public Optional<AfterPreviousExecutionState> getAfterPreviousExecutionState() {
                 return context.getAfterPreviousExecutionState();
             }
@@ -117,8 +142,8 @@ public class ResolveChangesStep<R extends Result> implements Step<CachingContext
                 return IncrementalInputProperties.ALL;
             case INCREMENTAL_PARAMETERS:
                 ImmutableBiMap.Builder<String, Object> builder = ImmutableBiMap.builder();
-                work.visitInputFileProperties((propertyName, value, incremental, fingerprinter) -> {
-                    if (incremental) {
+                work.visitInputFileProperties((propertyName, type, identity, value, fingerprinter) -> {
+                    if (type.isIncremental()) {
                         if (value == null) {
                             throw new InvalidUserDataException("Must specify a value for incremental input property '" + propertyName + "'.");
                         }

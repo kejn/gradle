@@ -17,7 +17,7 @@ class RootProject(model: CIBuildModel, functionalTestBucketProvider: FunctionalT
     id = AbsoluteId(uuid)
     parentId = AbsoluteId("Gradle")
     name = model.rootProjectName
-    val performanceTestBucketProvider = StatisticsBasedPerformanceTestBucketProvider(model, File("performance-test-runtimes.csv"), File("performance-tests-ci.json"))
+    val performanceTestBucketProvider = StatisticsBasedPerformanceTestBucketProvider(model, File("performance-test-durations.json"), File("performance-tests-ci.json"))
 
     features {
         versionedSettings {
@@ -44,19 +44,15 @@ class RootProject(model: CIBuildModel, functionalTestBucketProvider: FunctionalT
         prevStage = stage
     }
 
-    if (model.stages.map { stage -> stage.performanceTests }.flatten().isNotEmpty()) {
-        subProject(WorkersProject(model))
-    }
-
     buildTypesOrder = buildTypes
     subProjectsOrder = subProjects
 
     cleanup {
         baseRule {
-            history(days = 7)
+            history(days = 14)
         }
         baseRule {
-            artifacts(days = 7, artifactPatterns = """
+            artifacts(days = 14, artifactPatterns = """
                 +:**/*
                 +:$failedTestArtifactDestination/**/*"
             """.trimIndent())

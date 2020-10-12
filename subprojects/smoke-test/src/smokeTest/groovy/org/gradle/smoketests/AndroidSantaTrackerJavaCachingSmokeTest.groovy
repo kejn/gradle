@@ -44,8 +44,8 @@ class AndroidSantaTrackerJavaCachingSmokeTest extends AbstractAndroidSantaTracke
     @UnsupportedWithConfigurationCache(iterationMatchers = [AGP_3_ITERATION_MATCHER, AGP_4_0_ITERATION_MATCHER])
     def "can cache Santa Tracker Java Android application (agp=#agpVersion)"() {
 
-        // TODO remove once next 4.2 is available
-        assumeThat(agpVersion, not(equalTo("4.2.0-alpha07")))
+        // TODO remove after next 4.2 release
+        assumeThat(agpVersion, not(equalTo("4.2.0-alpha13")))
 
         given:
         def originalDir = temporaryFolder.createDir("original")
@@ -329,6 +329,8 @@ class AndroidSantaTrackerJavaCachingSmokeTest extends AbstractAndroidSantaTracke
         ':santa-tracker:processDevelopmentDebugResources': SUCCESS,
         ':santa-tracker:stripDevelopmentDebugDebugSymbols': NO_SOURCE,
         ':santa-tracker:validateSigningDevelopmentDebug': FROM_CACHE,
+        ':santa-tracker:writeDevelopmentDebugAppMetadata': FROM_CACHE,
+        ':santa-tracker:writeDevelopmentDebugSigningConfigVersions': FROM_CACHE,
         ':village:assembleDebug': SUCCESS,
         ':village:bundleDebugAar': SUCCESS,
         ':village:bundleLibCompileToJarDebug': FROM_CACHE,

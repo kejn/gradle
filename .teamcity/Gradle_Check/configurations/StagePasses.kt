@@ -11,6 +11,7 @@ import jetbrains.buildServer.configs.kotlin.v2019_2.BuildStep
 import jetbrains.buildServer.configs.kotlin.v2019_2.BuildType
 import jetbrains.buildServer.configs.kotlin.v2019_2.Dependencies
 import jetbrains.buildServer.configs.kotlin.v2019_2.FailureAction
+import jetbrains.buildServer.configs.kotlin.v2019_2.SnapshotDependency
 import jetbrains.buildServer.configs.kotlin.v2019_2.buildSteps.script
 import jetbrains.buildServer.configs.kotlin.v2019_2.triggers.ScheduleTrigger
 import jetbrains.buildServer.configs.kotlin.v2019_2.triggers.VcsTrigger
@@ -97,7 +98,12 @@ class StagePasses(model: CIBuildModel, stage: Stage, prevStage: Stage?, stagePro
         }
 
         snapshotDependencies(stageProject.specificBuildTypes)
-        snapshotDependencies(stageProject.performanceTests)
+        snapshotDependencies(stageProject.performanceTests) { performanceTestPass ->
+            if (!performanceTestPass.performanceTestCoverage.failsStage) {
+                onDependencyFailure = FailureAction.IGNORE
+                onDependencyCancel = FailureAction.IGNORE
+            }
+        }
         snapshotDependencies(stageProject.functionalTests)
     }
 })
@@ -108,10 +114,12 @@ fun stageTriggerId(model: CIBuildModel, stage: Stage) = stageTriggerId(model, st
 
 fun stageTriggerId(model: CIBuildModel, stageName: StageName) = AbsoluteId("${model.projectPrefix}Stage_${stageName.id}_Trigger")
 
-fun Dependencies.snapshotDependencies(buildTypes: Iterable<BuildType>) {
-    buildTypes.forEach {
-        dependency(it.id!!) {
-            snapshot {}
+fun <T : BuildType> Dependencies.snapshotDependencies(buildTypes: Iterable<T>, snapshotConfig: SnapshotDependency.(T) -> Unit = {}) {
+    buildTypes.forEach { buildType ->
+        dependency(buildType.id!!) {
+            snapshot {
+                snapshotConfig(buildType)
+            }
         }
     }
 }

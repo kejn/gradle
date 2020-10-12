@@ -52,7 +52,6 @@ abstract class FileContentGenerator {
         return """
         import org.gradle.util.GradleVersion
 
-        ${missingJavaLibrarySupportFlag()}
         ${noJavaLibraryPluginFlag()}
 
         ${config.plugins.collect { decideOnJavaPlugin(it, dependencyTree.hasParentProject(subProjectNumber)) }.join("\n        ")}
@@ -119,7 +118,7 @@ abstract class FileContentGenerator {
             return null
         }
         """
-        org.gradle.jvmargs=-Xmxs${config.daemonMemory} -Xmx${config.daemonMemory}
+        org.gradle.jvmargs=-Xms${config.daemonMemory} -Xmx${config.daemonMemory} -Dfile.encoding=UTF-8
         org.gradle.parallel=${config.parallel}
         org.gradle.workers.max=${config.maxWorkers}
         compilerMemory=${config.compilerMemory}
@@ -405,7 +404,7 @@ abstract class FileContentGenerator {
         if (plugin.contains('java')) {
             if (projectHasParents) {
                 return """
-                    if (missingJavaLibrarySupport || noJavaLibraryPlugin) {
+                    if (noJavaLibraryPlugin) {
                         ${imperativelyApplyPlugin("java")}
                     } else {
                         ${imperativelyApplyPlugin("java-library")}
@@ -436,7 +435,7 @@ abstract class FileContentGenerator {
                     $subProjectDependencies
         """
         return """
-            ${configurationsIfMissingJavaLibrarySupport(hasParent)}
+            ${addJavaLibraryConfigurationsIfNecessary(hasParent)}
             if (hasProperty("compileConfiguration")) {
                 dependencies {
                     ${block.replace(api, 'compile').replace(implementation, 'compile').replace(testImplementation, 'testCompile')}
@@ -463,8 +462,6 @@ abstract class FileContentGenerator {
                 </dependency>"""
     }
 
-    protected abstract String missingJavaLibrarySupportFlag()
-
     protected abstract String noJavaLibraryPluginFlag()
 
     protected abstract String tasksConfiguration()
@@ -473,7 +470,7 @@ abstract class FileContentGenerator {
 
     protected abstract String createTaskThatDependsOnAllIncludedBuildsTaskWithSameName(String taskName)
 
-    protected abstract String configurationsIfMissingJavaLibrarySupport(boolean hasParent)
+    protected abstract String addJavaLibraryConfigurationsIfNecessary(boolean hasParent)
 
     protected abstract String directDependencyDeclaration(String configuration, String notation)
 
