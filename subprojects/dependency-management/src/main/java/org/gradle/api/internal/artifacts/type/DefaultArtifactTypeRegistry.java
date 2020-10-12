@@ -30,6 +30,9 @@ import org.gradle.internal.component.model.ComponentArtifactMetadata;
 import org.gradle.internal.reflect.Instantiator;
 
 import java.io.File;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 import java.util.function.Consumer;
 
 import static org.gradle.api.internal.artifacts.ArtifactAttributes.ARTIFACT_FORMAT;
@@ -50,15 +53,17 @@ public class DefaultArtifactTypeRegistry implements ArtifactTypeRegistry {
 
     @Override
     public void visitArtifactTypes(Consumer<String> action) {
+        Set<String> seen = new HashSet<>();
         if (artifactTypeDefinitions != null) {
             for (ArtifactTypeDefinition artifactTypeDefinition : artifactTypeDefinitions) {
+                seen.add(artifactTypeDefinition.getName());
                 action.accept(artifactTypeDefinition.getName());
             }
         }
         for (ArtifactTransformRegistration transform : transformRegistry.getTransforms()) {
             String format = transform.getFrom().getAttribute(ARTIFACT_FORMAT);
             // Not a directory and some format that is not already registered
-            if (format != null && !format.equals(ArtifactTypeDefinition.DIRECTORY_TYPE) && (artifactTypeDefinitions == null || artifactTypeDefinitions.findByName(format) == null)) {
+            if (format != null && !format.equals(ArtifactTypeDefinition.DIRECTORY_TYPE) && seen.add(format)) {
                 action.accept(format);
             }
         }

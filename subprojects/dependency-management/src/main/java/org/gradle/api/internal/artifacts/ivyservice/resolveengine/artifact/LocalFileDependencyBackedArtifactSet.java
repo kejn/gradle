@@ -73,6 +73,10 @@ public class LocalFileDependencyBackedArtifactSet implements ResolvedArtifactSet
         return artifactTypeRegistry;
     }
 
+    public Spec<? super ComponentIdentifier> getComponentFilter() {
+        return componentFilter;
+    }
+
     public VariantSelector getSelector() {
         return selector;
     }

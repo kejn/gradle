@@ -31,6 +31,7 @@ import org.gradle.api.internal.CollectionCallbackActionDecorator
 import org.gradle.api.internal.artifacts.ArtifactTransformRegistration
 import org.gradle.api.internal.artifacts.VariantTransformRegistry
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.artifact.LocalFileDependencyBackedArtifactSet
+import org.gradle.api.internal.artifacts.ivyservice.resolveengine.artifact.ResolvableArtifact
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.artifact.ResolvedArtifactSet
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.artifact.ResolvedVariant
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.artifact.ResolvedVariantSet
@@ -52,7 +53,8 @@ import org.gradle.api.internal.attributes.ImmutableAttributesFactory
 import org.gradle.api.internal.file.FileCollectionFactory
 import org.gradle.api.internal.file.FileCollectionInternal
 import org.gradle.api.internal.tasks.TaskDependencyContainer
-import org.gradle.api.specs.Specs
+import org.gradle.api.internal.tasks.TaskDependencyResolveContext
+import org.gradle.api.specs.Spec
 import org.gradle.configurationcache.serialization.Codec
 import org.gradle.configurationcache.serialization.ReadContext
 import org.gradle.configurationcache.serialization.WriteContext
@@ -61,12 +63,13 @@ import org.gradle.configurationcache.serialization.encodePreservingSharedIdentit
 import org.gradle.configurationcache.serialization.readCollection
 import org.gradle.configurationcache.serialization.readNonNull
 import org.gradle.configurationcache.serialization.writeCollection
-import org.gradle.configurationcache.serialization.writeMap
 import org.gradle.internal.Describables
 import org.gradle.internal.DisplayName
 import org.gradle.internal.Try
 import org.gradle.internal.component.local.model.LocalFileDependencyMetadata
 import org.gradle.internal.component.model.VariantResolveMetadata
+import org.gradle.internal.operations.BuildOperationQueue
+import org.gradle.internal.operations.RunnableBuildOperation
 import org.gradle.internal.reflect.Instantiator
 import java.io.File
 
@@ -83,6 +86,7 @@ class LocalFileDependencyBackedArtifactSetCodec(
         //   - otherwise, write only the transform and attributes for each file rather than writing the transform registry
         write(value.dependencyMetadata.componentId)
         write(value.dependencyMetadata.files)
+        write(value.componentFilter)
 
         // Write the file extension -> attributes mappings
         // TODO - move this to an encoder
@@ -98,14 +102,18 @@ class LocalFileDependencyBackedArtifactSetCodec(
         // This currently uses a dummy file and dummy set of variants to calculate the mappings.
         // TODO - simplify extracting the mappings
         // TODO - deduplicate this data, as the mapping is at least project scoped and almost always the same across all projects of a given type
-        val mappings = mutableMapOf<ImmutableAttributes, TransformSpec>()
+        val mappings = mutableMapOf<ImmutableAttributes, MappingSpec>()
         value.artifactTypeRegistry.visitArtifactTypes { type ->
             val sourceAttributes = value.artifactTypeRegistry.mapAttributesFor(File("thing.${type}"))
             val recordingSet = RecordingVariantSet(value.dependencyMetadata.files, sourceAttributes)
-            value.selector.select(recordingSet, recordingSet)
-            if (recordingSet.targetAttributes != null) {
-                mappings.put(sourceAttributes, TransformSpec(recordingSet.targetAttributes!!, recordingSet.transformation!!))
-            } // else, do not transform
+            val selected = value.selector.select(recordingSet, recordingSet)
+            if (selected == ResolvedArtifactSet.EMPTY) {
+                mappings.put(sourceAttributes, EmptyMapping)
+            } else if (recordingSet.targetAttributes != null) {
+                mappings.put(sourceAttributes, TransformMapping(recordingSet.targetAttributes!!, recordingSet.transformation!!))
+            } else {
+                mappings.put(sourceAttributes, IdentityMapping)
+            }
         }
         write(mappings)
     }
@@ -113,6 +121,7 @@ class LocalFileDependencyBackedArtifactSetCodec(
     override suspend fun ReadContext.decode(): LocalFileDependencyBackedArtifactSet {
         val componentId = read() as ComponentIdentifier?
         val files = readNonNull<FileCollectionInternal>()
+        val filter = readNonNull<Spec<ComponentIdentifier>>()
 
         // TODO - use an immutable registry implementation
         val artifactTypeRegistry = decodePreservingSharedIdentity {
@@ -130,9 +139,9 @@ class LocalFileDependencyBackedArtifactSetCodec(
             registry
         }
 
-        val transforms = readNonNull<Map<ImmutableAttributes, TransformSpec>>()
+        val transforms = readNonNull<Map<ImmutableAttributes, MappingSpec>>()
         val selector = FixedVariantSelector(transforms, fileCollectionFactory, NoOpTransformedVariantFactory)
-        return LocalFileDependencyBackedArtifactSet(FixedFileMetadata(componentId, files), Specs.satisfyAll(), selector, artifactTypeRegistry)
+        return LocalFileDependencyBackedArtifactSet(FixedFileMetadata(componentId, files), filter, selector, artifactTypeRegistry)
     }
 }
 
@@ -141,7 +150,7 @@ private
 class RecordingVariantSet(
     private val source: FileCollectionInternal,
     private val attributes: ImmutableAttributes
-) : ResolvedVariantSet, ResolvedVariant, VariantSelector.Factory {
+) : ResolvedVariantSet, ResolvedVariant, VariantSelector.Factory, ResolvedArtifactSet {
     var targetAttributes: ImmutableAttributes? = null
     var transformation: Transformation? = null
 
@@ -169,8 +178,24 @@ class RecordingVariantSet(
         return attributes
     }
 
+    override fun visitDependencies(context: TaskDependencyResolveContext) {
+        throw UnsupportedOperationException("Should not be called")
+    }
+
+    override fun startVisit(actions: BuildOperationQueue<RunnableBuildOperation>, listener: ResolvedArtifactSet.AsyncArtifactListener): ResolvedArtifactSet.Completion {
+        throw UnsupportedOperationException("Should not be called")
+    }
+
+    override fun visitLocalArtifacts(visitor: ResolvedArtifactSet.LocalArtifactVisitor) {
+        throw UnsupportedOperationException("Should not be called")
+    }
+
+    override fun visitExternalArtifacts(visitor: Action<ResolvableArtifact>) {
+        throw UnsupportedOperationException("Should not be called")
+    }
+
     override fun getArtifacts(): ResolvedArtifactSet {
-        return ResolvedArtifactSet.EMPTY
+        return this
     }
 
     override fun asTransformed(sourceVariant: ResolvedVariant, targetAttributes: ImmutableAttributes, transformation: Transformation, dependenciesResolver: ExtraExecutionGraphDependenciesResolverFactory, transformedVariantFactory: TransformedVariantFactory): ResolvedArtifactSet {
@@ -182,23 +207,37 @@ class RecordingVariantSet(
 
 
 private
-class TransformSpec(val targetAttributes: ImmutableAttributes, val transformation: Transformation)
+sealed class MappingSpec
+
+
+private
+class TransformMapping(val targetAttributes: ImmutableAttributes, val transformation: Transformation) : MappingSpec()
+
+
+private
+object EmptyMapping : MappingSpec()
+
+
+private
+object IdentityMapping : MappingSpec()
 
 
 private
 class FixedVariantSelector(
-    private val transforms: Map<ImmutableAttributes, TransformSpec>,
+    private val transforms: Map<ImmutableAttributes, MappingSpec>,
     private val fileCollectionFactory: FileCollectionFactory,
     private val transformedVariantFactory: TransformedVariantFactory
 ) : VariantSelector {
     override fun select(candidates: ResolvedVariantSet, factory: VariantSelector.Factory): ResolvedArtifactSet {
         require(candidates.variants.size == 1)
         val variant = candidates.variants.first()
-        val transform = transforms.get(variant.attributes)
-        if (transform == null) {
-            return variant.artifacts
+        val spec = transforms.get(variant.attributes.asImmutable())
+        return when (spec) {
+            null -> variant.artifacts // was no mapping for extension
+            is EmptyMapping -> ResolvedArtifactSet.EMPTY
+            is IdentityMapping -> variant.artifacts
+            is TransformMapping -> factory.asTransformed(variant, spec.targetAttributes, spec.transformation, EmptyDependenciesResolverFactory(fileCollectionFactory), transformedVariantFactory)
         }
-        return factory.asTransformed(variant, transform.targetAttributes, transform.transformation, EmptyDependenciesResolverFactory(fileCollectionFactory), transformedVariantFactory)
     }
 }
 
