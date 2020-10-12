@@ -14,14 +14,22 @@
  * limitations under the License.
  */
 
+@file:Suppress("DEPRECATION")
+
 package org.gradle.configurationcache.serialization.codecs
 
+import org.gradle.api.Action
 import org.gradle.api.artifacts.FileCollectionDependency
 import org.gradle.api.artifacts.component.ComponentIdentifier
+import org.gradle.api.artifacts.transform.TransformAction
+import org.gradle.api.artifacts.transform.TransformParameters
+import org.gradle.api.artifacts.transform.VariantTransform
 import org.gradle.api.attributes.Attribute
 import org.gradle.api.attributes.AttributeContainer
 import org.gradle.api.file.FileCollection
 import org.gradle.api.internal.CollectionCallbackActionDecorator
+import org.gradle.api.internal.artifacts.ArtifactTransformRegistration
+import org.gradle.api.internal.artifacts.VariantTransformRegistry
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.artifact.LocalFileDependencyBackedArtifactSet
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.artifact.ResolvedArtifactSet
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.artifact.ResolvedVariant
@@ -53,6 +61,7 @@ import org.gradle.configurationcache.serialization.encodePreservingSharedIdentit
 import org.gradle.configurationcache.serialization.readCollection
 import org.gradle.configurationcache.serialization.readNonNull
 import org.gradle.configurationcache.serialization.writeCollection
+import org.gradle.configurationcache.serialization.writeMap
 import org.gradle.internal.Describables
 import org.gradle.internal.DisplayName
 import org.gradle.internal.Try
@@ -89,15 +98,16 @@ class LocalFileDependencyBackedArtifactSetCodec(
         // This currently uses a dummy file and dummy set of variants to calculate the mappings.
         // TODO - simplify extracting the mappings
         // TODO - deduplicate this data, as the mapping is at least project scoped and almost always the same across all projects of a given type
-        for (artifactTypeDefinition in value.artifactTypeRegistry.create()!!) {
-            val sourceAttributes = value.artifactTypeRegistry.mapAttributesFor(File("thing.${artifactTypeDefinition.name}"))
+        val mappings = mutableMapOf<ImmutableAttributes, TransformSpec>()
+        value.artifactTypeRegistry.visitArtifactTypes { type ->
+            val sourceAttributes = value.artifactTypeRegistry.mapAttributesFor(File("thing.${type}"))
             val recordingSet = RecordingVariantSet(value.dependencyMetadata.files, sourceAttributes)
             value.selector.select(recordingSet, recordingSet)
-            write(recordingSet.targetAttributes)
             if (recordingSet.targetAttributes != null) {
-                write(recordingSet.transformation)
-            }
+                mappings.put(sourceAttributes, TransformSpec(recordingSet.targetAttributes!!, recordingSet.transformation!!))
+            } // else, do not transform
         }
+        write(mappings)
     }
 
     override suspend fun ReadContext.decode(): LocalFileDependencyBackedArtifactSet {
@@ -106,7 +116,7 @@ class LocalFileDependencyBackedArtifactSetCodec(
 
         // TODO - use an immutable registry implementation
         val artifactTypeRegistry = decodePreservingSharedIdentity {
-            val registry = DefaultArtifactTypeRegistry(instantiator, attributesFactory, CollectionCallbackActionDecorator.NOOP)
+            val registry = DefaultArtifactTypeRegistry(instantiator, attributesFactory, CollectionCallbackActionDecorator.NOOP, EmptyVariantTransformRegistry)
             val mappings = registry.create()!!
             readCollection {
                 val name = readString()
@@ -120,17 +130,7 @@ class LocalFileDependencyBackedArtifactSetCodec(
             registry
         }
 
-        val transforms = mutableMapOf<ImmutableAttributes, TransformSpec>()
-        for (artifactTypeDefinition in artifactTypeRegistry.create()!!) {
-            val sourceAttributes = artifactTypeRegistry.mapAttributesFor(File("thing.${artifactTypeDefinition.name}"))
-            val targetAttributes = read() as ImmutableAttributes?
-            if (targetAttributes == null) {
-                continue
-            }
-            val transformation = readNonNull<Transformation>()
-            transforms.put(sourceAttributes, TransformSpec(targetAttributes, transformation))
-        }
-
+        val transforms = readNonNull<Map<ImmutableAttributes, TransformSpec>>()
         val selector = FixedVariantSelector(transforms, fileCollectionFactory, NoOpTransformedVariantFactory)
         return LocalFileDependencyBackedArtifactSet(FixedFileMetadata(componentId, files), Specs.satisfyAll(), selector, artifactTypeRegistry)
     }
@@ -249,6 +249,22 @@ object NoOpTransformedVariantFactory : TransformedVariantFactory {
     }
 
     override fun transformedProjectArtifacts(componentIdentifier: ComponentIdentifier, sourceVariant: ResolvedVariant, target: ImmutableAttributes, transformation: Transformation, dependenciesResolverFactory: ExtraExecutionGraphDependenciesResolverFactory): ResolvedArtifactSet {
+        throw UnsupportedOperationException("Should not be called")
+    }
+}
+
+
+private
+object EmptyVariantTransformRegistry : VariantTransformRegistry {
+    override fun registerTransform(registrationAction: Action<in VariantTransform>) {
+        throw UnsupportedOperationException("Should not be called")
+    }
+
+    override fun <T : TransformParameters?> registerTransform(actionType: Class<out TransformAction<T>>, registrationAction: Action<in org.gradle.api.artifacts.transform.TransformSpec<T>>) {
+        throw UnsupportedOperationException("Should not be called")
+    }
+
+    override fun getTransforms(): MutableList<ArtifactTransformRegistration> {
         throw UnsupportedOperationException("Should not be called")
     }
 }
