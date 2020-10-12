@@ -21,6 +21,7 @@ import kotlinx.metadata.KmDeclarationContainer
 import kotlinx.metadata.jvm.KotlinClassHeader
 import kotlinx.metadata.jvm.KotlinClassMetadata
 import kotlinx.metadata.jvm.signature
+import org.gradle.api.GradleException
 import org.gradle.internal.normalization.java.ApiClassExtractor
 import org.gradle.internal.normalization.java.impl.AnnotationMember
 import org.gradle.internal.normalization.java.impl.ApiMemberWriter
@@ -31,6 +32,7 @@ import org.gradle.internal.normalization.java.impl.InnerClassMember
 import org.gradle.internal.normalization.java.impl.MethodMember
 import org.gradle.internal.normalization.java.impl.MethodStubbingApiMemberAdapter
 import org.gradle.internal.normalization.java.impl.SimpleAnnotationValue
+import org.gradle.kotlin.dsl.support.loggerFor
 import org.objectweb.asm.ClassReader
 import org.objectweb.asm.ClassVisitor
 import org.objectweb.asm.ClassWriter
@@ -73,6 +75,12 @@ class KotlinApiMemberWriter(apiMemberAdapter: ClassVisitor, val inlineMethodWrit
                 is KotlinClassMetadata.SyntheticClass -> {
                 }
                 is KotlinClassMetadata.Unknown -> {
+                    logger.warn(
+                        "Unknown Kotlin metadata detected on classpath for class `${classMember.name}`. " +
+                            "Compile avoidance for buildscripts will be disabled for this build. " +
+                            "This can happen when the script's classpath has a library that is compiled with a later version of Kotlin than Gradle is using."
+                    )
+                    throw GradleException("Unknown Kotlin metadata with kind: ${kotlinMetadata.header.kind} on class ${classMember.name}")
                 }
             }
         }
@@ -177,3 +185,7 @@ class MethodCopyingVisitor(val method: MethodMember, val classWriter: ClassWrite
         return super.visitMethod(access, name, descriptor, signature, exceptions)
     }
 }
+
+
+internal
+val logger = loggerFor<KotlinApiClassExtractor>()
